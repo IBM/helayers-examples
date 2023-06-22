@@ -1,2 +1,4 @@
-# helayers-examples
-Examples for HElayers homomorphic encryption SDK for C++ and Python
+# HElayers examples
+
+For specific HElayers examples documentation, see the
+[HElayers documentation](https://ibm.github.io/helayers/).
