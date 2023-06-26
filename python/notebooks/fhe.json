@@ -1,0 +1,10 @@
+{
+    "enable_fhe": true,
+    "he_run_requirements": {
+        "batchSize": 4096,
+        "security": 192,
+        "integerPartPrecision": 20,
+        "fractPartPrecision": 30,
+        "he_context_options": ["SEAL_CKKS"]
+    }
+}
