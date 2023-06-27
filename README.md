@@ -6,4 +6,4 @@ For specific HElayers examples documentation, see the
 ## Examples datasets
 
 Some examples use datasets under the `data` directory.  In order to populate
-that directory, run the `./download_helayers_examples_data.sh' script once.
+that directory, run the `./download_helayers_examples_data.sh` script once.
