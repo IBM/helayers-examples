@@ -10,12 +10,35 @@ The code uses the SEAL and HElib libraries for FHE implementation.
 
 # To Compile
 
-```
+```bash
 cd liphe/src
+```
+
+Edit `Makefile` and set:
+NTLINCDIR - the include directory of NTL
+HELIB2_INCDIR - the include directory of HElib
+HELIB2_LIBDIR - the lib directory of HElib
+
+SEAL_INCDIR - the include directory of SEAL
+SEAL_LIB - the lib directory of SEAL
+
+```bash
 make
 cd ../../sir
+```
+
+Edit `Makefile` and set:
+NTLINCDIR - the include directory of NTL
+HELIB2_INCDIR - the include directory of HElib
+HELIB2_LIBDIR - the lib directory of HElib
+
+SEAL_INCDIR - the include directory of SEAL
+SEAL_LIB - the lib directory of SEAL
+
+```bash
 make sir_fhe
 ```
+
 
 # To Run
 
