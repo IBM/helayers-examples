@@ -4,6 +4,7 @@ This code implements feature selection for Ridge regression as described in:
 
 "Privacy Preserving Feature Selection for Sparse Linear Regression"
 by Adi Akavia, Ben Galili, Hayim Shaul, Mor Weiss and Zohar Yakhini.
+Accepted to PETS`24.
 
 
 The code uses the SEAL and HElib libraries for FHE implementation.
