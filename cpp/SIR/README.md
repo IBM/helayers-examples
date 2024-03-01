@@ -20,9 +20,43 @@ make sir_fhe
 # To Run
 
 ## Generating synthetic data
-Generate data with 4 features and 784 records.
+Generate synthetic data. The first parameter is the number of feature the second parameter is the number of records
 ```
 python ../datasets/generate_data.py 4 784 ../datasets/d4x1.csv
+python ../datasets/generate_data.py 10 784 ../datasets/d10x1.csv
+python ../datasets/generate_data.py 40 784 ../datasets/d40x1.csv
+
+python ../datasets/generate_data.py 4 1568 ../datasets/d4x2.csv
+python ../datasets/generate_data.py 10 1568 ../datasets/d10x2.csv
+python ../datasets/generate_data.py 40 1568 ../datasets/d40x2.csv
+
+python ../datasets/generate_data.py 4 6272 ../datasets/d4x8.csv
+python ../datasets/generate_data.py 10 6272 ../datasets/d10x8.csv
+python ../datasets/generate_data.py 40 6272 ../datasets/d40x8.csv
+
+python ../datasets/generate_data.py 4 12544 ../datasets/d4x16.csv
+python ../datasets/generate_data.py 10 12544 ../datasets/d10x16.csv
+python ../datasets/generate_data.py 40 12544 ../datasets/d40x16.csv
+
+python ../datasets/generate_data.py 4 50176 ../datasets/d4x64.csv
+python ../datasets/generate_data.py 10 50176 ../datasets/d10x64.csv
+python ../datasets/generate_data.py 40 50176 ../datasets/d40x64.csv
+
+python ../datasets/generate_data.py 4 100352 ../datasets/d4x128.csv
+python ../datasets/generate_data.py 10 100352 ../datasets/d10x128.csv
+python ../datasets/generate_data.py 40 100352 ../datasets/d40x128.csv
+
+python ../datasets/generate_data.py 4 200704 ../datasets/d4x256.csv
+python ../datasets/generate_data.py 10 200704 ../datasets/d10x256.csv
+python ../datasets/generate_data.py 40 200704 ../datasets/d40x256.csv
+
+python ../datasets/generate_data.py 4 401408 ../datasets/d4x512.csv
+python ../datasets/generate_data.py 10 401408 ../datasets/d10x512.csv
+python ../datasets/generate_data.py 40 401408 ../datasets/d40x512.csv
+
+python ../datasets/generate_data.py 4 802816 ../datasets/d4x1024.csv
+python ../datasets/generate_data.py 10 802816 ../datasets/d10x1024.csv
+python ../datasets/generate_data.py 40 802816 ../datasets/d40x1024.csv
 ```
 
 ## Running the full system
