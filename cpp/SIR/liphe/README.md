@@ -54,9 +54,10 @@ To test the Binary Search (SPiRiT) algorithm run
 
 The tests were successful on Ubuntu 16 with
 - g++ 5.4.0
-- HElib
+- HElib 2.2.0
 - NTL 10.5.0
 - GMP 6.1.0
+- SEAL 3.7
 
 
 
