@@ -8,34 +8,45 @@ Change directory to the tutorial's home directory, then execute:
     cmake .
     make
 
-## Basic logging
+## Run
+See the demos list below. The demos would by default run with a mockup HeContext (i.e., non-secure but fast HeContext). 
+The HeContext can be set to a secure one (either Seal or HEaaN) by setting the second parameter. 
+For example, run the following command to run the first demo with Seal HeContext:
+
+    ./tutorial_circuit 1 seal
+
+As another example, run the following command to run the second demo with HEaaN context:
+
+    ./tutorial_circuit 2 heaan
+
+### Basic logging
 This tutorial shows a basic example where we build a small circuit and log it onto stdout.
 Open `tut_1_basics_log.cpp` and explore the code comments. Run the basic logging tutorial by executing:
 
-    ./tutorial_circuit mockup 1
+    ./tutorial_circuit 1
 
-## Basic running
+### Basic running
 This tutorial shows a basic example where we build a small circuit and then run it.
 Open `tut_2_basics_run.cpp` and explore the code comments. Run the basic running tutorial by executing:
 
-    ./tutorial_circuit mockup 2
+    ./tutorial_circuit 2
 
-## Plaintext
+### Plaintext
 This tutorial shows a basic example where we build a small circuit that involves operations between ciphertexts and plaintexts and then run it.
 The plaintext values involved in the computation will be embedded inside the circuit as constant (visible) parameters inside it.
 Open `tut_3_run_plaintext.cpp` and explore the code comments. Run the plaintext tutorial by executing:
 
-    ./tutorial_circuit mockup 3
+    ./tutorial_circuit 3
 
-## Parameters
+### Parameters
 This tutorial shows a basic example where we build a small circuit where the computation involves constant parameters that are encrypted.These parameters are not part of the input, and are embedded inside the circuit, same as in tutorial 3. However, since they should be hidden, they are encrypted and stored in a separate object.
 As a real-life motivating example, consider a neural network circuit. The input to the network is provided by the user at run-time, but the network parameters are considered part of the circuit itself. We can choose to keep them in plaintext as in tutorial 3, or encrypt them as shown here.
 Open `tut_4_run_params.cpp` and explore the code comments. Run the params tutorial by executing:
 
-    ./tutorial_circuit mockup 4
+    ./tutorial_circuit 4
 
-## Tile Tensors
+### Tile Tensors
 This tutorial shows a basic example where we build a small circuit that uses tile tensors and run it.
 Open `tut_5_run_tile_tensors.cpp` and explore the code comments. Run the tile tensors tutorial by executing:
 
-    ./tutorial_circuit mockup 5
+    ./tutorial_circuit 5

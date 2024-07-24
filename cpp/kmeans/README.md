@@ -1,6 +1,6 @@
 # K-Means Example
 
-This example demonstrates a k-means computation.  
+This example demonstrates a k-means computation. The demo uses the low level HElayers HeModel API that allows finer control than the regular API demonstrated in other demos.
 
 An `helayers` Context is first generated, and then saved both *with* (client side) and *without* (sever side) the private key.  Subsequent flows are split between client and server function.
 
@@ -32,11 +32,11 @@ Back on the client side, the `decryptResults` static method is called to decrypt
 Change directory to the example's home directory, then execute:
 
     cmake .
-    make kmeans_seal
+    make kmeans_seal_low_level_api
 
 ## Run
 
 Run K-Means example:
 
-    ./kmeans_seal
+    ./kmeans_seal_low_level_api
 

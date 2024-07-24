@@ -55,7 +55,7 @@ void buildCircuit1(CircuitContext& he)
   // now let's add them together:
   c1.add(c2);
   // although c1 is the same variable from the circuit's point of view it is
-  // differnet because now it correspond to a different node.
+  // different because now it correspond to a different node.
 
   // Copy c2 to c3.
   CTile c3(c2);

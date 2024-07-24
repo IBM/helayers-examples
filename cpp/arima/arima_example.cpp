@@ -101,52 +101,34 @@ void generateSeries(DoubleTensor& res,
 
 int main()
 {
-  // define plain ARIMA variable. it represents a plain model, that is used as
-  // an intermediate object that is loaded from external parameters and/or
-  // weights, to be used to build an HE model. this variable does not contain
-  // anything yet.
-  shared_ptr<PlainModel> plainArima;
+  // Set the floating point precision for prints in this demo.
+  getPrintOptions().precision = 8;
 
-  // define HE ARIMA variable. it represents a model that's encoded, and
-  // possible encrypted, under FHE, and supports fit and/or predict. this
+  // Define HE ARIMA variable. It represents a model that's encoded, and
+  // possible encrypted, under FHE, and supports fit and/or predict. This
   // variable does not contain anything yet.
   shared_ptr<HeModel> heArima;
 
   // === CLIENT SIDE ===
 
-  // load plain model hyper-parameters from stream.
+  // Load plain model hyper-parameters from stream.
   ifstream ifs =
       FileUtils::openIfstream(getDataSetsDir() + "/arima/model.json");
   PlainModelHyperParams hyperParams;
   hyperParams.load(ifs);
 
-  // build plain model.
-  // The "create" method also supports providing a vector of input file names,
-  // or a vector of input streams, as a second parameter.
-  plainArima = PlainModel::create(hyperParams);
-
-  // define HE run requirements
+  // Define HE run requirements.
   HeRunRequirements heRunReq;
   heRunReq.setHeContextOptions({make_shared<HeaanContext>()});
 
-  // compile the plain model and HE run requirements into HE profile
-  optional<HeProfile> profile = HeModel::compile(*plainArima, heRunReq);
-  always_assert(profile.has_value());
+  // Build HE model.
+  heArima = make_shared<Arima>();
+  heArima->encodeEncrypt({}, heRunReq, hyperParams);
 
-  // init HE context given profile
-  shared_ptr<HeContext> he;
-  bool useMockup = false;
-  if (useMockup)
-    profile->setNotSecureMockup();
-  he = HeModel::createContext(*profile);
+  // Get the HE context.
+  shared_ptr<HeContext> he = heArima->getCreatedHeContext();
 
-  getPrintOptions().precision = 8;
-
-  // build HE model
-  heArima = plainArima->getEmptyHeModel(*he);
-  heArima->encodeEncrypt(*plainArima, *profile);
-
-  // Generate a plain ARIMA(p,0,1) time series for training
+  // Generate a plain ARIMA(p,0,1) time series for training.
   int p = hyperParams.p;
   int d = hyperParams.d;
   double expectedMu = 50;
@@ -184,35 +166,38 @@ int main()
   DoubleTensorCPtr plainInputsForFit =
       make_shared<const DoubleTensor>(seriesPlain);
 
+  // For predict, we also take the whole series.
+  // Even though only the last hyperParams.numValuesUsedForPrediction elements
+  // will be actually encrypted and used.
+  // We can choose to slice the input ourselves if we want (it makes no
+  // difference).
   DoubleTensorCPtr plainInputsForPredict =
-      make_shared<const DoubleTensor>(seriesPlain.getSlice(
-          0,
-          seriesPlain.size() - hyperParams.numValuesUsedForPrediction,
-          hyperParams.numValuesUsedForPrediction));
+      make_shared<const DoubleTensor>(seriesPlain);
 
-  // get IO processor from the HE model
-  shared_ptr<ModelIoProcessor> iop = heArima->createIoProcessor();
+  // Get Model IO encoder for the HE model.
+  shared_ptr<ModelIoEncoder> modelIoEncoder =
+      make_shared<ModelIoEncoder>(*heArima);
 
-  // encrypt inputs for fit
+  // Encrypt inputs for fit.
   shared_ptr<EncryptedData> encInputs = make_shared<EncryptedData>(*he);
-  iop->encodeEncryptInputsForFit(*encInputs, {plainInputsForFit});
+  modelIoEncoder->encodeEncrypt(*encInputs, {plainInputsForFit});
 
-  // save HE model
+  // Save HE model.
   stringstream stream;
   heArima->save(stream);
   encInputs->save(stream);
 
   // === SERVER SIDE ===
 
-  // load HE model
+  // Load HE model.
   heArima = loadHeModel(*he, stream);
   encInputs = loadEncryptedData(*he, stream);
 
-  // fit HE model
+  // Fit HE model.
   cout << "Homomorphically computing the ARIMA coefficients . . ." << endl;
   heArima->fit(*encInputs);
 
-  // save trained HE model
+  // Save trained HE model.
   stringstream stream2;
   heArima->save(stream2);
 
@@ -220,42 +205,39 @@ int main()
 
   heArima = loadHeModel(*he, stream2);
 
-  // decrypt trained HE model into trained plain model
-  plainArima = heArima->decryptDecode();
+  // Decrypt trained HE model into trained plain model.
+  shared_ptr<PlainModel> plainArima = heArima->decryptDecode();
   plainArima->debugPrint("Model Trained Parameters");
 
-  // build new HE model from the trained plain model, for inference under FHE.
-  // can define new HE run requirements, obtain new profile and init new HE
-  // context, tailored for inference.
-  // this time, for inference under FHE, we choose to not encrypt the model
-  // weights
+  // Build new HE model from the trained plain model, for inference under FHE.
+  // We can define new HE run requirements and init new HeContext, tailored for
+  // inference. This time, for inference under FHE, we choose to not encrypt the
+  // model weights.
   HeRunRequirements heRunReq2;
   heRunReq2.setHeContextOptions({make_shared<HeaanContext>()});
   heRunReq2.setModelEncrypted(false);
 
-  profile = HeModel::compile(*plainArima, heRunReq2);
+  auto profile = HeModel::compile(*plainArima, heRunReq2);
   always_assert(profile.has_value());
 
-  if (useMockup)
-    profile->setNotSecureMockup();
   he = HeModel::createContext(*profile);
 
   heArima = plainArima->getEmptyHeModel(*he);
   heArima->encode(*plainArima, *profile);
 
-  // get new IO processor from the HE model
-  iop = heArima->createIoProcessor();
+  // get new IO encoder from the HE model
+  modelIoEncoder = make_shared<ModelIoEncoder>(*heArima);
 
-  // save IO processor to be used to encrypt inputs by some other entity that
+  // save IO encoder to be used to encrypt inputs by some other entity that
   // has data to predict over
   stringstream stream3;
-  iop->save(stream3);
+  modelIoEncoder->save(stream3);
 
-  // load IO processor by the other entity else, encrypt inputs for predict
-  iop = loadIoProcessor(*he, stream3);
+  // load IO encoder by the other entity else, encrypt inputs for predict
+  modelIoEncoder = loadIoEncoder(*he, stream3);
 
   encInputs = make_shared<EncryptedData>(*he);
-  iop->encodeEncryptInputsForPredict(*encInputs, {plainInputsForPredict});
+  modelIoEncoder->encodeEncrypt(*encInputs, {plainInputsForPredict});
 
   // save HE model
   stringstream stream4;
@@ -279,7 +261,7 @@ int main()
 
   // decrypt prediction
   cout << endl << "Decrypting the prediction result" << endl << endl;
-  DoubleTensorCPtr result = iop->decryptDecodeOutput(encResults);
+  DoubleTensorCPtr result = modelIoEncoder->decryptDecodeOutput(encResults);
   double fhePrediction = result->at(0);
   std::shared_ptr<ArimaPlain> plainArimaDerived =
       std::dynamic_pointer_cast<ArimaPlain>(plainArima);

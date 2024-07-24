@@ -24,7 +24,7 @@
 
 #include <iostream>
 #include <fstream>
-#include "kmeans_demo.h"
+#include "kmeans_demo_low_level_api.h"
 #include "helayers/ai/kmeans/KMeans.h"
 #include "helayers/ai/kmeans/KMeansPlain.h"
 #include "helayers/math/CTileTensor.h"
@@ -36,6 +36,11 @@
 
 using namespace std;
 using namespace helayers;
+
+/*
+This demo uses the low level HElayers HeModel API that allows finer control than
+the regular API demonstrated in other demos.
+*/
 
 void run(HeContext& emptyHe)
 {
@@ -68,13 +73,14 @@ void run(HeContext& emptyHe)
 
   KMeans kmeans(*he);
   kmeans.encodeEncrypt(*kp, *profile);
-  shared_ptr<ModelIoProcessor> iop = kmeans.createIoProcessor();
+  // get IO encoder from the HE model
+  ModelIoEncoder modelIoEncoder(kmeans);
 
   EncryptedData cdata(*he);
   cdata.attachOutputStorage(storage1);
   {
     HELAYERS_TIMER_SECTION("encrypt");
-    iop->encodeEncryptInputsForPredict(cdata, {input});
+    modelIoEncoder.encodeEncrypt(cdata, {input});
   }
   cdata.flushToStorage();
 
@@ -101,7 +107,7 @@ void run(HeContext& emptyHe)
   DoubleTensorCPtr heRes;
   {
     HELAYERS_TIMER_SECTION("decrypt");
-    heRes = iop->decryptDecodeOutput(*cresults);
+    heRes = modelIoEncoder.decryptDecodeOutput(*cresults);
   }
 
   cout << "Comparing with plain . . ." << endl;

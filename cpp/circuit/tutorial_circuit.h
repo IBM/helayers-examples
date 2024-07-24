@@ -28,4 +28,4 @@ void tut_3_run_plaintext();
 void tut_4_run_param();
 void tut_5_run_tile_tensors();
 
-void help(const char *);
+void help(const char*);

@@ -27,6 +27,7 @@
 #include "helayers/hebase/hebase.h"
 #include "helayers/hebase/mockup/MockupContext.h"
 #include "helayers/hebase/seal/SealCkksContext.h"
+#include "helayers/hebase/heaan/HeaanContext.h"
 
 #include "tutorial_circuit.h"
 
@@ -49,22 +50,24 @@ int main(int argc, char** argv)
   } else
     help(argv[0]);
 
-  int slotCount = 4 * 1024;
+  HeConfigRequirement requirement;
+  requirement.numSlots = 4 * 1024;
+  requirement.multiplicationDepth = 2;
+  requirement.fractionalPartPrecision = 40;
+  requirement.integerPartPrecision = 20;
+  requirement.securityLevel = 128;
+
   if (scheme == "mockup") {
     he2 = make_shared<MockupContext>();
-    he2->init(HeConfigRequirement::insecure(slotCount));
-  } else if (scheme == "seal") {
-    HeConfigRequirement requirement;
-    requirement.numSlots = slotCount;
-    requirement.multiplicationDepth = 2;
-    requirement.fractionalPartPrecision = 40;
-    requirement.integerPartPrecision = 20;
-    requirement.securityLevel = 128;
+    requirement.securityLevel = 0;
+  } else if (scheme == "seal")
     he2 = make_shared<SealCkksContext>();
-    he2->init(requirement);
-  } else {
+  else if (scheme == "heaan")
+    he2 = make_shared<HeaanContext>();
+  else
     throw runtime_error("Unknown scheme " + scheme);
-  }
+
+  he2->init(requirement);
 
   if (arg == "1")
     tut_1_basics_log();
@@ -88,6 +91,8 @@ void help(const char* cmd)
   cout << "\tmockup\ta fast mockup scheme that does not involve encryption"
        << endl;
   cout << "\tseal\tSeal's implementation for CKKS" << endl;
+  cout << endl;
+  cout << "\theaan\tHEaaN's implementation for CKKS" << endl;
   cout << endl;
   cout << "\t1\tbasic example that logs a circuit" << endl;
   cout << "\t2\tbasic example that creates a circuit and then runs it" << endl;

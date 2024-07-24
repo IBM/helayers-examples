@@ -12,12 +12,12 @@ Run the decision tree example over encrypted data:
     ./decision_tree_example
 
 The following flags are available (all optional):
-* `max_batches` - int, determines the maximal number of classification batches to be run. -1 to run all batches.
+* `max_batches` - int, determines the maximal number of classification batches to be run. -1 to run all batches. If this argument is ommited, 3 batches are run.
 * `mockup` - use a mockup context. This is a context which runs all computations in the plain.
 
 Example:
 
-`./decision_tree_seal --max_batches 3`
+`./decision_tree_example --max_batches 3`
 
 ## References:
 

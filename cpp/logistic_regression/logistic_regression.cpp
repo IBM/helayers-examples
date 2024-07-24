@@ -31,6 +31,7 @@
 #include "helayers/hebase/seal/SealCkksContext.h"
 #include "helayers/hebase/utils/TextIoUtils.h"
 #include "helayers/ai/HeModel.h"
+#include "helayers/ai/logistic_regression/LogisticRegression.h"
 #include "helayers/ai/AiGlobals.h"
 #include "helayers/math/MathGlobals.h"
 
@@ -52,38 +53,27 @@ int main()
   cout << "*** Starting LR demo ***" << endl;
 
   // === CLIENT SIDE ===
-  // build plain model.
+  // Define hyper parameters.
   PlainModelHyperParams hp;
   hp.logisticRegressionActivation = activation;
   hp.numberOfFeatures = inputSize;
 
-  shared_ptr<PlainModel> lrp = PlainModel::create(hp, {weightsH5File});
-
-  // define HE LR variable. it represents a model that's encoded, and
-  // possible encrypted, under FHE, and supports fit and/or predict.
-  // this variable does not contin anything yet.
-  shared_ptr<HeModel> lr;
-
-  // define HE run requirements
+  // Define HE run requirements.
   HeRunRequirements heRunReq;
   heRunReq.optimizeForBatchSize(batchSize);
   heRunReq.setHeContextOptions({make_shared<SealCkksContext>()});
 
-  // compile the plain model and HE run requirements into HE profile
-  optional<HeProfile> profile = HeModel::compile(*lrp, heRunReq);
-  always_assert(profile.has_value());
+  // Build HE model.
+  shared_ptr<HeModel> lr = make_shared<LogisticRegression>();
+  lr->encodeEncrypt({weightsH5File}, heRunReq, hp);
 
-  // init HE context given profile
-  shared_ptr<HeContext> he = HeModel::createContext(*profile);
+  // Get the HE context.
+  shared_ptr<HeContext> he = lr->getCreatedHeContext();
 
-  // build HE model
-  lr = lrp->getEmptyHeModel(*he);
-  lr->encodeEncrypt(*lrp, *profile);
+  // Get Model IO encoder for the HE model.
+  ModelIoEncoder modelIoEncoder(*lr);
 
-  // get IO processor from the HE model
-  shared_ptr<ModelIoProcessor> iop = lr->createIoProcessor();
-
-  // encrypt inputs for predict
+  // Encrypt inputs for predict.
   shared_ptr<DoubleTensor> inputs = make_shared<DoubleTensor>();
   *inputs = TextIoUtils::readMatrixFromCsvFile(dataFile);
   shared_ptr<DoubleTensor> labels =
@@ -96,16 +86,16 @@ int main()
   shared_ptr<EncryptedData> cinputs = make_shared<EncryptedData>(*he);
   {
     HELAYERS_TIMER_SECTION("encrypt");
-    iop->encodeEncryptInputsForPredict(*cinputs, {inputs});
+    modelIoEncoder.encodeEncrypt(*cinputs, {inputs});
   }
 
-  // save HE model
+  // Save HE model.
   stringstream stream;
   lr->save(stream);
   cinputs->save(stream);
 
   // === SERVER SIDE ===
-  // load HE model
+  // Load HE model.
   lr = loadHeModel(*he, stream);
   cinputs = loadEncryptedData(*he, stream);
 
@@ -115,15 +105,15 @@ int main()
     lr->predict(*cresults, *cinputs);
   }
 
-  // save predictions
+  // Save predictions.
   stringstream stream2;
   cresults->save(stream2);
 
   // === CLIENT SIDE ===
-  // load predictions
+  // Load predictions.
   cresults = loadEncryptedData(*he, stream2);
 
-  DoubleTensorCPtr res = iop->decryptDecodeOutput(*cresults);
+  DoubleTensorCPtr res = modelIoEncoder.decryptDecodeOutput(*cresults);
 
   res->assertSameShape(*labels);
   int correct = 0;
@@ -140,6 +130,6 @@ int main()
   HELAYERS_TIMER_PRINT_MEASURE_SUMMARY("encrypt");
   HELAYERS_TIMER_PRINT_MEASURE_SUMMARY("predict");
 
-  // Uncomment this to get lower level breakdown
+  // Uncomment this to get lower level breakdown:
   //  HELAYERS_TIMER_PRINT_MEASURES_SUMMARY();
 }

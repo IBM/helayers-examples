@@ -25,10 +25,15 @@
 #include <iostream>
 #include <fstream>
 
-#include "kmeans_demo.h"
+#include "kmeans_demo_low_level_api.h"
 #include "helayers/hebase/seal/SealCkksContext.h"
 using namespace std;
 using namespace helayers;
+
+/*
+This demo uses the low level HElayers HeModel API that allows finer control than
+the regular API demonstrated in other demos.
+*/
 
 int main()
 {

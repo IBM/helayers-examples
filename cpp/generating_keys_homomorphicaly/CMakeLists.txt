@@ -22,16 +22,14 @@
 # SOFTWARE.
 #
 
-
 cmake_minimum_required(VERSION 3.10)
 
-project(tutorial_circuit VERSION 0.0.1 LANGUAGES CXX)
+project(hierarchical_rotation VERSION 0.0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Release)
 set(CMAKE_CXX_FLAGS "-Werror -fopenmp -Wfatal-errors")
 
 find_package(HEaaN REQUIRED)
-find_package(SEAL 3.6.6 EXACT REQUIRED)
 find_package(Boost 1.72.0 EXACT REQUIRED COMPONENTS filesystem)
 find_package(ONNX REQUIRED)
 find_package(Protobuf REQUIRED)
@@ -39,11 +37,6 @@ find_package(OpenSSL REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 include_directories(${HDF5_INCLUDE_DIR})
 
-add_executable(tutorial_circuit tutorial_circuit.cpp
-    tut_1_basics_log.cpp
-    tut_2_basics_run.cpp
-    tut_3_run_plaintext.cpp
-    tut_4_run_param.cpp
-    tut_5_run_tile_tensors.cpp
-)
-target_link_libraries(tutorial_circuit helayers_seal_ext onnx ${HDF5_LIBRARIES} helayers_heaan_ext HEaaN::HEaaN helayers SEAL::seal Boost::filesystem OpenSSL::Crypto)
+add_executable(hierarchical_rotation hierarchical_rotation.cpp)
+target_link_libraries(hierarchical_rotation helayers_heaan_ext HEaaN::HEaaN)
+target_link_libraries(hierarchical_rotation helayers onnx ${HDF5_LIBRARIES} Boost::headers Boost::filesystem OpenSSL::Crypto)

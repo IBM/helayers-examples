@@ -74,6 +74,7 @@ samples and 1 feature contains fabricated data.
 const std::string outDir = getExamplesOutputDir();
 double meanX = 10.0;
 double stdX = 1.0;
+double stdXNoiseForFabricatedData = 0.1;
 
 double phi0 = 50.0;
 double phi1 = -0.4;
@@ -100,8 +101,8 @@ int main()
 
   // These are HE requirements shared by the participants.
   HeConfigRequirement req =
-      useMockup ? HeConfigRequirement::insecure(pow(2, 14), 12, 50, 10)
-                : HeConfigRequirement(pow(2, 14), 12, 50, 10);
+      useMockup ? HeConfigRequirement::insecure(pow(2, 13), 9, 42, 10)
+                : HeConfigRequirement(pow(2, 13), 9, 42, 10);
   req.publicFunctions.rotate = CUSTOM_ROTATIONS;
   req.publicFunctions.rotationSteps = {1, 16, 256, 4096};
 
@@ -164,6 +165,7 @@ int main()
   hyperParams.linearRegressionDistributionX = LR_NORMAL_DISTRIBUTION;
   hyperParams.linearRegressionMeanX = meanX;
   hyperParams.linearRegressionStdX = stdX;
+  hyperParams.inverseApproximationPrecision = 2;
   hyperParams.trainable = true;
   hyperParams.verbose = false;
 
@@ -312,11 +314,10 @@ shared_ptr<HeModel> setupHeModel(shared_ptr<HeContext> he,
 
   if (useMockup) {
     heRunReq.setHeContextOptions({make_shared<PalisadeCkksContext>()});
-    heRunReq.setNotSecure();
   } else {
     heRunReq.setHeContextOptions({he});
-    heRunReq.setExplicitHeConfigRequirement(he->getHeConfigRequirement());
   }
+  heRunReq.setExplicitHeConfigRequirement(he->getHeConfigRequirement());
 
   optional<HeProfile> profile = HeModel::compile(*lrp, heRunReq);
   always_assert(profile.has_value());
@@ -329,17 +330,23 @@ void generateEncryptAndSaveInputs(shared_ptr<HeContext> he,
                                   const string& name,
                                   shared_ptr<HeModel> lr)
 {
-
-  shared_ptr<ModelIoProcessor> iop = lr->createIoProcessor();
+  // get IO encoder from the HE model
+  ModelIoEncoder modelIoEncoder(*lr);
   EncryptedData encryptedInputs(*he);
 
   // Create fabricated data
-  DoubleTensor data = LinearRegressionEstimator::getSimulatedInputsNormal(
-      phi0, phi1, meanX, stdX, numSamplesEachParty, seed++);
+  DoubleTensor data =
+      LinearRegressionEstimator::getSimulatedInputsNormalSimpleLR(
+          phi0,
+          phi1,
+          meanX,
+          stdX + stdXNoiseForFabricatedData,
+          numSamplesEachParty,
+          seed++);
   DoubleTensorCPtr x = make_shared<const DoubleTensor>(data.getSlice(1, 0));
   DoubleTensorCPtr y = make_shared<const DoubleTensor>(data.getSlice(1, 1));
 
-  iop->encodeEncryptInputsForFit(encryptedInputs, {x, y});
+  modelIoEncoder.encodeEncrypt(encryptedInputs, {x, y});
   encryptedInputs.saveToFile(outDir + "/" + name + "_encrypted_data");
 }
 

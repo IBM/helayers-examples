@@ -30,7 +30,7 @@
 #include "helayers/hebase/HelayersTimer.h"
 #include "helayers/hebase/utils/HelayersConfig.h"
 #include "helayers/hebase/utils/TextIoUtils.h"
-#include "helayers/ai/logistic_regression/LogisticRegressionPlain.h"
+#include "helayers/ai/logistic_regression/LogisticRegression.h"
 #include "helayers/ai/HeModel.h"
 #include "helayers/ai/AiGlobals.h"
 #include "helayers/math/MathGlobals.h"
@@ -90,7 +90,7 @@ int main()
   readInput(input, labels, dataFile, inputSize, batchSize);
   cout << "Done reading input." << endl;
 
-  // initialise a plain model object
+  // Define hyper parameters.
   cout << "Initialising Logistic Regression Training . . ." << endl;
   PlainModelHyperParams hp;
   hp.numberOfFeatures = inputSize;
@@ -101,33 +101,27 @@ int main()
   hp.trainable = true;
   hp.verbose = false;
 
-  shared_ptr<PlainModel> lrp = PlainModel::create(hp);
-
-  // define HE LR variable. it represents a model that's encoded, and
+  // Define HE LR variable. It represents a model that's encoded, and
   // possible encrypted, under FHE, and supports fit and/or predict.
-  // this variable does not contain anything yet.
+  // This variable does not contain anything yet.
   shared_ptr<HeModel> lr;
 
-  // define HE run requirements
+  // Define HE run requirements.
   HeRunRequirements heRunReq;
   cout << "Initializing HEaaN . . ." << endl;
   heRunReq.setHeContextOptions({make_shared<HeaanContext>()});
   heRunReq.setMaxContextMemory(10L * 1024L * 1024L * 1024L); // 10 GB
   heRunReq.optimizeForBatchSize(batchSize);
 
-  // compile the plain model and HE run requirements into HE profile
-  optional<HeProfile> profile = HeModel::compile(*lrp, heRunReq);
-  always_assert(profile.has_value());
+  // Build HE model.
+  lr = make_shared<LogisticRegression>();
+  lr->encodeEncrypt({}, heRunReq, hp);
 
-  // init HE context given profile
-  shared_ptr<HeContext> he = HeModel::createContext(*profile);
+  // Get the HE context.
+  shared_ptr<HeContext> he = lr->getCreatedHeContext();
 
-  // build HE model
-  lr = lrp->getEmptyHeModel(*he);
-  lr->encodeEncrypt(*lrp, *profile);
-
-  // get IO processor from the HE model
-  shared_ptr<ModelIoProcessor> iop = lr->createIoProcessor();
+  // get IO encoder from the HE model
+  ModelIoEncoder modelIoEncoder(*lr);
   cout << "Done initialising Logistic Regression Training." << endl;
 
   // The plaintext samples and labels are encrypted:
@@ -139,7 +133,7 @@ int main()
     HELAYERS_TIMER("Encrypt Input and Labels");
     vector<DoubleTensorCPtr> xy = {make_shared<DoubleTensor>(input),
                                    make_shared<DoubleTensor>(labels)};
-    iop->encodeEncryptInputsForFit(encryptedInputs, xy);
+    modelIoEncoder.encodeEncrypt(encryptedInputs, xy);
   }
   cout << "Done encrypting input and labels for Logistic Regression Training."
        << endl;
@@ -169,6 +163,7 @@ int main()
        << endl;
 
   // Train a plain model to compare with encrypted one
+  shared_ptr<PlainModel> lrp = PlainModel::create(hp);
   DoubleTensor y = labels;
   {
     HELAYERS_TIMER("Training on Plain Data");
