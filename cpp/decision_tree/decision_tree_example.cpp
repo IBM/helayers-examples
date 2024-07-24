@@ -79,18 +79,12 @@ static void assessResults(const DoubleTensor& predictedLabels,
 int main(int argc, char** argv)
 {
   int maxBatches = 3;
-  bool mockup = false;
 
   for (int i = 0; i < argc; ++i) {
     // The maximum number of batches to predict over. Set to -1 to predict over
     // all batches.
     if (std::string(argv[i]) == "--max_batches") {
       maxBatches = atoi(argv[i + 1]);
-    }
-
-    // If this flag is set, a mockup context will be used
-    if (std::string(argv[i]) == "--mockup") {
-      mockup = true;
     }
   }
 
@@ -101,20 +95,13 @@ int main(int argc, char** argv)
   PlainModelHyperParams hyperParams;
   hyperParams.load(hyperParamsFile);
 
-  shared_ptr<PlainModel> dtreePlain =
-      PlainModel::create(hyperParams, {dtFilePath});
-
   HeRunRequirements heRunReq;
-  shared_ptr<HeaanContext> heaanHe = make_shared<HeaanContext>();
-  heRunReq.setHeContextOptions({heaanHe});
+  heRunReq.setHeContextOptions({make_shared<HeaanContext>()});
 
-  optional<HeProfile> profile = HeModel::compile(*dtreePlain, heRunReq);
-  always_assert(profile.has_value());
+  shared_ptr<HeModel> dtree = make_shared<DTree>();
+  dtree->encodeEncrypt({dtFilePath}, heRunReq, hyperParams);
 
-  shared_ptr<HeContext> he;
-  if (mockup)
-    profile->setNotSecureMockup();
-  he = HeModel::createContext(*profile);
+  const shared_ptr<HeContext> he = dtree->getCreatedHeContext();
 
   DatasetPlain datasetPlain(he->slotCount());
   string inputFile = getDataSetsDir() + "/net_fraud/creditcard.csv";
@@ -124,13 +111,10 @@ int main(int argc, char** argv)
   DoubleTensor plainSamples = datasetPlain.getAllSamples();
   DoubleTensor plainLabels = datasetPlain.getAllLabels();
 
-  shared_ptr<HeModel> dtree = dtreePlain->getEmptyHeModel(*he);
-  dtree->encodeEncrypt(*dtreePlain, *profile);
-
-  shared_ptr<ModelIoProcessor> iop = dtree->createIoProcessor();
+  ModelIoEncoder modelIoEncoder(*dtree);
   EncryptedData encryptedDataSamples(*he);
-  iop->encodeEncryptInputsForPredict(encryptedDataSamples,
-                                     {make_shared<DoubleTensor>(plainSamples)});
+  modelIoEncoder.encodeEncrypt(encryptedDataSamples,
+                               {make_shared<DoubleTensor>(plainSamples)});
 
   EncryptedData encryptedPredictions(*he);
   {
@@ -138,7 +122,8 @@ int main(int argc, char** argv)
     dtree->predict(encryptedPredictions, encryptedDataSamples);
   }
 
-  DoubleTensorCPtr predictions = iop->decryptDecodeOutput(encryptedPredictions);
+  DoubleTensorCPtr predictions =
+      modelIoEncoder.decryptDecodeOutput(encryptedPredictions);
 
   HELAYERS_TIMER_PRINT_MEASURE_SUMMARY("predict");
 

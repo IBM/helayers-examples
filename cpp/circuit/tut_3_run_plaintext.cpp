@@ -80,22 +80,18 @@ void runCircuit3(const HeContext& he, const Circuit& circ)
   CTile c1(he);
   encoder.encodeEncrypt(c1, vals1);
 
-  CtxtCacheMem inputs;
   cout << "Attach the ciphertext to label to be input for the circuit" << endl;
-  inputs.setByLabel(string("input1"), c1);
-
   Runner runner(he, circ);
-  cout << "Add the inputs to the circuit runner" << endl;
-  runner.addWritableCache(&inputs);
+  runner.setByLabelCopy(string("input1"), c1);
 
   cout << "Run the circuit" << endl;
   runner.run();
 
   cout << "Get the output from the circuit" << endl;
-  CTile output = runner.getCTileByLabel("output");
+  shared_ptr<CTile> output = runner.getCTileByLabel("output");
 
   vector<double> outputDec;
-  outputDec = encoder.decryptDecodeDouble(output);
+  outputDec = encoder.decryptDecodeDouble(*output);
 
   cout << "(" << vals1[0] << ", " << vals1[1] << ", " << vals1[2] << ")"
        << " + (4, 5, 6) = "
@@ -111,7 +107,9 @@ void tut_3_run_plaintext()
           "to the input of the circuit, run the the circuit and read the output"
        << endl;
   CircuitContext he;
-  he.init(HeConfigRequirement::insecure(he2->slotCount()));
+  auto req = he2->getHeConfigRequirement();
+  req.securityLevel = 0;
+  he.init(req);
 
   cout << "Create a circuit structure by executing a code with CircuitContext "
           "context"

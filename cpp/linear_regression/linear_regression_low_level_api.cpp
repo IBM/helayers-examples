@@ -35,6 +35,11 @@
 using namespace std;
 using namespace helayers;
 
+/*
+This demo uses the low level HElayers HeModel API that allows finer control than
+the regular API demonstrated in other demos.
+*/
+
 int main()
 {
   cout << "*** Starting Linear Regression demo ***" << endl;
@@ -46,7 +51,7 @@ int main()
   DoubleTensor weights =
       TextIoUtils::readMatrixFromCsvFile(dataDir + "logModelWeights.csv");
   weights.transpose();
-  weights.reshape({weights.size(), 1, 1});
+  weights.reshape({(int)weights.size(), 1, 1});
 
   DoubleTensor biases =
       TextIoUtils::readMatrixFromCsvFile(dataDir + "bias.csv");
@@ -76,8 +81,8 @@ int main()
   lr = lrPlain.getEmptyHeModel(*he);
   lr->encodeEncrypt(lrPlain, *profile);
 
-  // get IO processor from the HE model
-  shared_ptr<ModelIoProcessor> iop = lr->createIoProcessor();
+  // get IO encoder from the HE model
+  ModelIoEncoder modelIoEncoder(*lr);
 
   // encrypt inputs for predict
   shared_ptr<DoubleTensor> inputs = make_shared<DoubleTensor>();
@@ -86,7 +91,7 @@ int main()
   shared_ptr<EncryptedData> cinputs = make_shared<EncryptedData>(*he);
   {
     HELAYERS_TIMER_SECTION("encrypt");
-    iop->encodeEncryptInputsForPredict(*cinputs, {inputs});
+    modelIoEncoder.encodeEncrypt(*cinputs, {inputs});
   }
 
   // save HE model
@@ -115,7 +120,7 @@ int main()
 
   // decrypt prediction
   {
-    DoubleTensorCPtr results = iop->decryptDecodeOutput(*cresults);
+    DoubleTensorCPtr results = modelIoEncoder.decryptDecodeOutput(*cresults);
     cout << results->getShapeAsString() << endl;
 
     for (int p = 0; p < results->size(); p++) {

@@ -27,7 +27,6 @@
 #include "helayers/ai/AiGlobals.h"
 #include "helayers/ai/DatasetPlain.h"
 #include "helayers/ai/HeProfileOptimizer.h"
-#include "helayers/ai/nn/NeuralNetPlain.h"
 #include "helayers/ai/nn/NeuralNet.h"
 #include "helayers/hebase/hebase.h"
 #include "helayers/hebase/HebaseGlobals.h"
@@ -43,12 +42,6 @@
 
 using namespace std;
 using namespace helayers;
-
-const std::string outDir = getExamplesOutputDir();
-const string nnFile = outDir + "/nnFile.bin";
-const string samplesFile = outDir + "/samples.bin";
-const string contextFile = outDir + "/context.bin";
-const string predictionsFile = outDir + "/predictions.bin";
 
 void assesResults(const DoubleTensor& predictedLabels,
                   const DoubleTensor& origLabels)
@@ -161,13 +154,16 @@ int main()
   }
 
   // Step 1. Load the existing model and dataset into the trusted environment
-  // In this step we are loading a pre-trained model and a dataset while
-  // operating on a trusted client environment. The model and data used in this
-  // demo correspond to a credit card fraud dataset.
-  // For convenience, the model has been pre-trained and is available in
+  // and encrypt them. In this step we are loading a pre-trained model and a
+  // dataset while operating on a trusted client environment. The model and data
+  // used in this demo correspond to a credit card fraud dataset. For
+  // convenience, the model has been pre-trained and is available in
   // examples/python/notebooks/data_gen folder.
 
+  // 1.1 load the model and data.
   string inputPath = getDataSetsDir() + "/net_fraud";
+  string archFile = inputPath + "/model.json";
+  string weightsFile = inputPath + "/model.h5";
   int batchSize = 4096;
   DatasetPlain ds(batchSize);
   ds.loadFromH5(
@@ -177,113 +173,76 @@ int main()
   cout << "loaded samples of shape: "
        << TensorUtils::shapeToString(plainSamples.getShape()) << endl;
 
-  // Step 2. Encrypt the neural network in the trusted environment
-  // The next set of steps include the following:
+  // 1.2 Encrypt the neural network in the trusted environment
+  // The next step loads a model that was pre-trained in the clear.
+  // The initialization processes involves internally an optimization step.
+  // This step finds the best parameters for this model, and also gives us
+  // estimations on the time it would take to predict using a single core, the
+  // precision, the memory, the time it would take to encrypt/decrypt, etc.
 
-  // 2.1 Load NN architecture and weights using the FHE library
-  string archFile = inputPath + "/model.json";
-  string weightsFile = inputPath + "/model.h5";
-  PlainModelHyperParams hyperParams;
-  NeuralNetPlain neuralNetPlain;
-  neuralNetPlain.initFromFiles(hyperParams, {archFile, weightsFile});
-  cout << "neuralNetPlain created and initialized" << endl;
+  // The input to the compilation process are some preferences that we have,
+  // specified in the `HeRunRequirements` object. In this demo we just specify
+  // that we use SEAL as the underlying backend. We also specify the batch size,
+  // how many samples we plan to provide when we perform inference.
 
-  // 2.2 Define He run requirements
+  // There are many more parameters that can be specified to the optimizer.
+
   // These requirements specify how the HE encryption should be configured.
   HeRunRequirements heRunReq;
-  // Encryption is as strong as a 192-bit encryption at least.
-  heRunReq.setSecurityLevel(192);
-  // Largest number we'll be able to safely process under encryption is
-  // 2^30=1,073,741,824.
-  heRunReq.setIntegerPartPrecision(30);
-  // Our numbers are theoretically stored with precision of about 2^-30.
-  heRunReq.setFractionalPartPrecision(30);
-  // Batch size for NN. Large batch sizes should be used to optimize for
-  // throughput while small batch sizes should be uesd to optimize for latency.
-  heRunReq.optimizeForBatchSize(batchSize);
   // Use SEAL CKKS encryption library
-  shared_ptr<SealCkksContext> sealHe = make_shared<SealCkksContext>();
-  heRunReq.setHeContextOptions({sealHe});
+  heRunReq.setHeContextOptions({make_shared<SealCkksContext>()});
+  // Batch size for NN. Large batch sizes should be used to optimize for
+  // throughput while small batch sizes should be used to optimize for latency.
+  heRunReq.optimizeForBatchSize(batchSize);
 
-  // 2.3  Compile the plain model and HE run requirements into HE profile
-  // This HE profile holds encryption-specific parameters.
-  optional<HeProfile> profile = HeModel::compile(neuralNetPlain, heRunReq);
-  always_assert(profile.has_value());
+  shared_ptr<HeModel> nn = make_shared<NeuralNet>();
+  nn->encodeEncrypt({archFile, weightsFile}, heRunReq);
 
-  // 2.4 Encrypt the NN
-  shared_ptr<HeContext> clientContext = HeModel::createContext(*profile);
-  shared_ptr<HeModel> clientNn = neuralNetPlain.getEmptyHeModel(*clientContext);
-  clientNn->encodeEncrypt(neuralNetPlain, *profile);
-  cout << "clientNn initialized" << endl;
+  // The above initialization processes also configured the HE encryption
+  // scheme, and generated the keys. These can be accessed via the `he_context`
+  // object.
+  shared_ptr<HeContext> heContext = nn->getCreatedHeContext();
 
-  // 2.5 Get a "ModelIoProcessor" from the HE model
-  // The IoProcessor object will be used to encrypt and decrypt the input and
-  // output of the prediction.
-  shared_ptr<ModelIoProcessor> iop = clientNn->createIoProcessor();
+  // 1.3 Encrypt the data.
+  // Create a "ModelIoEncoder" for the HE model. This object will be
+  // used to encrypt and decrypt the input and output of the prediction.
+  ModelIoEncoder modelIoEncoder(*nn);
 
-  // 2.6 Encrypt the data in the trusted environment
   // Here we encrypt the samples that we'll later perform inference on. Note
-  // that the encryption is done by the above created ModelIoProcessor object,
+  // that the encryption is done by the above created ModelIoEncoder object,
   // since some pre-processing of the data may be required to adjust it to this
-  // praticular network.
-  EncryptedData encryptedDataSamples(*clientContext);
-  iop->encodeEncryptInputsForPredict(encryptedDataSamples,
-                                     {make_shared<DoubleTensor>(plainSamples)});
+  // particular network.
+  EncryptedData encryptedDataSamples(*heContext);
+  modelIoEncoder.encodeEncrypt(encryptedDataSamples,
+                               {make_shared<DoubleTensor>(plainSamples)});
 
-  // 2.7 Save the NN and data so they can be loaded on the cloud/remote server
-  FileUtils::createCleanDir(outDir);
-  clientNn->saveToFile(nnFile);
-  encryptedDataSamples.saveToFile(samplesFile);
-  // Save the context. Note that this saves all the HE library information,
-  // including the public key, allowing the server to perform HE computations.
-  // The secret key is not saved here, so the server won't be able to decrypt.
-  // The secret key is never stored unless explicitly requested by the user
-  // using the designated method.
-  clientContext->saveToFile(contextFile);
-
-  // Step 3. Perform predictions in the untrusted server using encrypted data
+  // Step 2. Perform predictions in the untrusted server using encrypted data
   // and neural network
 
-  // 3.1 Load the neural network, samples and context in the server
-  // Now we're on the server side. We will load the encrypted NN, the encrypted
-  // samples and the free-of-secret-key context into empty variables, using the
-  // loadFromFile() method.
-  shared_ptr<HeContext> serverContext = loadHeContextFromFile(contextFile);
-  shared_ptr<HeModel> serverNn = loadHeModelFromFile(*serverContext, nnFile);
-  shared_ptr<EncryptedData> serverSamples =
-      loadEncryptedDataFromFile(*serverContext, samplesFile);
+  // We assume the encrypted model and data were sent over to an untrusted
+  // server (see next demos for examples how to do that).
 
-  // 3.2 Perform inference in cloud/server using encrypted data and encrypted NN
+  // 2.1 Perform inference in cloud/server using encrypted data and encrypted NN
   // We can now run the inference of the encrypted data and encrypted NN to
   // obtain encrypted results. This computation does not use the secret key and
   // acts on completely encrypted values.
-  // **NOTE: the data, the NN and the results always remain in encyrpted state,
+  // **NOTE: the data, the NN and the results always remain in encrypted state,
   // even during computation.**
-  EncryptedData serverPredictions(*serverContext);
+  EncryptedData predictions(*heContext);
   HELAYERS_TIMER_PUSH("predict");
-  serverNn->predict(serverPredictions, *serverSamples);
+  nn->predict(predictions, encryptedDataSamples);
   HELAYERS_TIMER_POP();
 
-  // 3.3 Save the encrypted prediction so they can loaded and decrypted in the
-  // trusted environment
-  serverPredictions.saveToFile(predictionsFile);
+  // Step 3. Decrypt the prediction results in the trusted environment
 
-  // Step 4. Decrypt the prediction results in the trusted environment
-
-  // 4.1  Load the encrypted predictions:
-  shared_ptr<EncryptedData> clientPredictions =
-      loadEncryptedDataFromFile(*clientContext, predictionsFile);
-  cout << "predictions loaded" << endl;
-
-  // 4.2 Decrypt and decode the predictions
   // The client's side context also has the secret key, so we are able to
   // perform decryption. Here, the decrypt decode operation is done by the
-  // ModelIoProcessor object, as some minor post-processing may be required
+  // ModelIoEncoder object, as some minor post-processing may be required
   // (e.g. transpose).
   DoubleTensorCPtr plainPredictions =
-      iop->decryptDecodeOutput(*clientPredictions);
+      modelIoEncoder.decryptDecodeOutput(predictions);
 
-  // Step 5. Assess the results - precision, recall, F1 score
+  // Step 4. Assess the results - precision, recall, F1 score
 
   // As this classification problem is a binary one, we will assess the results
   // by comparing the positive and negative classifications with the true
@@ -291,6 +250,4 @@ int main()
   assesResults(*plainPredictions, labels);
   HELAYERS_TIMER_PRINT_MEASURE_SUMMARY("predict");
   cout << "used RAM = " << MemoryUtils::getUsedRam() << " (MB)" << endl;
-
-  FileUtils::removeDir(outDir);
 }

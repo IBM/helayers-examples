@@ -196,7 +196,7 @@ void run(HeContext& he,
     CTile capital(he);
     enc.encodeEncrypt(capital, stringToAscii(country_capital_pair.second));
     // Add the pair to the database
-    encrypted_country_db.emplace_back(move(country), move(capital));
+    encrypted_country_db.emplace_back(std::move(country), std::move(capital));
   }
   HELIB_NTIMER_STOP(timer_CtxtCountryDB);
 

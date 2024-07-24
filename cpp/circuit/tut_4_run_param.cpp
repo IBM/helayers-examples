@@ -79,7 +79,7 @@ void buildCircuit4(CircuitContext& he)
 
 void runCircuit4(const HeContext& he,
                  const Circuit& circ,
-                 const CtxtCacheMem& constants)
+                 CtxtCacheMem& constants)
 {
   Encoder encoder(he);
 
@@ -88,26 +88,22 @@ void runCircuit4(const HeContext& he,
   CTile c1(he);
   encoder.encodeEncrypt(c1, vals1);
 
-  CtxtCacheMem inputs;
   cout << "Attach the ciphertext to the label to be input for the circuit"
        << endl;
-  inputs.setByLabel("input1", c1);
-
   Runner runner(he, circ);
-  cout << "Add the input to the circuit runner" << endl;
-  runner.addWritableCache(&inputs);
+  runner.setByLabelCopy("input1", c1);
 
-  cout << "Add the constants to the circuit runner" << endl;
-  runner.addReadOnlyCache(&constants);
+  // Initialize the encrypted parameters
+  runner.fillUnlabeledData(constants);
 
   cout << "Run the circuit" << endl;
   runner.run();
 
   cout << "Get the output from the circuit using the output label" << endl;
-  CTile output = runner.getCTileByLabel("output");
+  shared_ptr<CTile> output = runner.getCTileByLabel("output");
 
   vector<double> outputDec;
-  outputDec = encoder.decryptDecodeDouble(output);
+  outputDec = encoder.decryptDecodeDouble(*output);
 
   cout << "(" << vals1[0] << ", " << vals1[1] << ", " << vals1[2] << ")"
        << " + (4, 5, 6) = "
@@ -124,8 +120,8 @@ void tut_4_run_param()
           "the input of the circuit, run the the circuit and read the output"
        << endl;
   CircuitContext he;
-  auto req = HeConfigRequirement::insecure(he2->slotCount());
-  req.multiplicationDepth = he2->getTopChainIndex();
+  auto req = he2->getHeConfigRequirement();
+  req.securityLevel = 0;
   he.init(req);
 
   cout << "Create a circuit structure by executing a code with CircuitContext "
@@ -136,12 +132,12 @@ void tut_4_run_param()
   cout << "Get the circuit object" << endl;
   Circuit circ = he.getCircuit();
   cout << "Get the parameters of the circuit" << endl;
-  circuit::CtxtCacheMem constants;
-  circ.saveUnlabeledInputs(constants);
-  constants.setReadOnly();
+  circuit::CtxtCacheMem constants(*he2);
+  circ.saveUnlabeledInputs(&constants);
+  circ.reuseParams();
 
   cout << "Encrypt the constants with the context we will run with" << endl;
-  constants.encrypt(*he2);
+  constants.encrypt();
 
   cout << "Run the circuit with a different context" << endl;
   runCircuit4(*he2, circ, constants);

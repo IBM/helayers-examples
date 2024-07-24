@@ -30,7 +30,7 @@
 #include <algorithm>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/transformed.hpp>
-#include <omp.h>
+#include "helayers/hebase/OmpWrapper.h"
 
 #include "helayers/hebase/hebase.h"
 #include "helayers/hebase/heaan/HeaanContext.h"

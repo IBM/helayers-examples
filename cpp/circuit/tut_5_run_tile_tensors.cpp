@@ -116,15 +116,11 @@ void runCircuit5(const HeContext& he, const Circuit& circ)
   CTileTensor inputEnc2(he);
   encoder.encodeEncrypt(inputEnc2, shape, input2);
 
-  CtxtCacheMem inputs;
   cout << "Attach the 2 TileTensors to labels to be input for the circuit"
        << endl;
-  inputs.setByLabel(string("input1"), inputEnc1);
-  inputs.setByLabel(string("input2"), inputEnc2);
-
   Runner runner(he, circ);
-  cout << "Add the inputs to the circuit runner" << endl;
-  runner.addWritableCache(&inputs);
+  runner.setByLabelCopy(string("input1"), inputEnc1);
+  runner.setByLabelCopy(string("input2"), inputEnc2);
 
   cout << "Run the circuit" << endl;
   runner.run();
@@ -151,7 +147,9 @@ void tut_5_run_tile_tensors()
           "the input of the circuit, run the the circuit and read the output"
        << endl;
   CircuitContext he;
-  he.init(HeConfigRequirement::insecure(he2->slotCount()));
+  auto req = he2->getHeConfigRequirement();
+  req.securityLevel = 0;
+  he.init(req);
 
   cout << "Create a circuit structure by executing a code with CircuitContext "
           "context"
