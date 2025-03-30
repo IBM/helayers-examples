@@ -10,14 +10,14 @@ Change directory to the tutorial's home directory, then execute:
 
 ## Run
 See the demos list below. The demos would by default run with a mockup HeContext (i.e., non-secure but fast HeContext). 
-The HeContext can be set to a secure one (either Seal or HEaaN) by setting the second parameter. 
+The HeContext can be set to a secure one (either Seal or openFhe CKKS) by setting the second parameter. 
 For example, run the following command to run the first demo with Seal HeContext:
 
     ./tutorial_circuit 1 seal
 
-As another example, run the following command to run the second demo with HEaaN context:
+As another example, run the following command to run the second demo with openFhe context:
 
-    ./tutorial_circuit 2 heaan
+    ./tutorial_circuit 2 openfhe
 
 ### Basic logging
 This tutorial shows a basic example where we build a small circuit and log it onto stdout.

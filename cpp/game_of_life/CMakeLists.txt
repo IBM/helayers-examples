@@ -29,14 +29,21 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Release)
 set(CMAKE_CXX_FLAGS "-Werror -fopenmp -Wfatal-errors")
 
-find_package(HEaaN REQUIRED)
+find_package(OpenFHE REQUIRED)
 find_package(Boost 1.72.0 EXACT REQUIRED COMPONENTS filesystem)
 find_package(ONNX REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 include_directories(${HDF5_INCLUDE_DIR})
+include_directories(
+        ${OpenFHE_INCLUDE}
+        ${OpenFHE_INCLUDE}/third-party/include
+        ${OpenFHE_INCLUDE}/pke
+        ${OpenFHE_INCLUDE}/binfhe
+        ${OpenFHE_INCLUDE}/core)
+
 
 add_executable(game_of_life game_of_life.cpp)
-target_link_libraries(game_of_life helayers_heaan_ext HEaaN::HEaaN)
+target_link_libraries(game_of_life helayers_openfhe_ext helayers ${OpenFHE_LIBRARIES})
 target_link_libraries(game_of_life helayers onnx ${HDF5_LIBRARIES} Boost::headers Boost::filesystem OpenSSL::Crypto)

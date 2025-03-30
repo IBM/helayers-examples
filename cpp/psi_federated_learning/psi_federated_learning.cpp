@@ -33,14 +33,13 @@
 #include "helayers/hebase/OmpWrapper.h"
 
 #include "helayers/hebase/hebase.h"
-#include "helayers/hebase/heaan/HeaanContext.h"
+#include "helayers/hebase/openfhe/OpenFheCkksContext.h"
 #include "helayers/hebase/HelayersTimer.h"
 #include "helayers/ai/psi_federated_learning/RtsPsiManager.h"
 #include "helayers/ai/psi_federated_learning/AggregatorPsiManager.h"
 
 using namespace std;
 using namespace helayers;
-using namespace HEaaN;
 
 /*
  This example demonstrates a Private Set Intersection (PSI) protocol between two
@@ -125,8 +124,8 @@ int main(int argc, char* argv[])
 
   cout << "Run Aggregator's side..." << endl;
 
-  HeaanContext he;
-  HeConfigRequirement req(pow(2, 15), 9, 48, 12);
+  OpenFheCkksContext he;
+  HeConfigRequirement req(pow(2, 15), 20, 48, 7);
   req.bootstrappable = true;
   req.automaticBootstrapping = true;
   he.init(req);
@@ -232,7 +231,7 @@ int main(int argc, char* argv[])
        << endl
        << endl;
   cout << std::string(70, '=') << endl;
-  aliceData.debugPrint("Alice's Data", 1);
+  aliceData.debugPrint("Alice's Data");
   cout << endl;
   cout << std::string(70, '=') << endl;
   TTEncoder enc(he);
@@ -241,8 +240,7 @@ int main(int argc, char* argv[])
   res.debugPrint(
       "Protocol Output (In a real use of the protocol, Alice will not "
       "be able to see this content, and so will not learn "
-      "anything about which samples are in the intersection)",
-      1);
+      "anything about which samples are in the intersection)");
   cout << endl;
 
   return 0;

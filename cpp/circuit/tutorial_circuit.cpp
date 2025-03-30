@@ -27,7 +27,7 @@
 #include "helayers/hebase/hebase.h"
 #include "helayers/hebase/mockup/MockupContext.h"
 #include "helayers/hebase/seal/SealCkksContext.h"
-#include "helayers/hebase/heaan/HeaanContext.h"
+#include "helayers/hebase/openfhe/OpenFheCkksContext.h"
 
 #include "tutorial_circuit.h"
 
@@ -62,8 +62,8 @@ int main(int argc, char** argv)
     requirement.securityLevel = 0;
   } else if (scheme == "seal")
     he2 = make_shared<SealCkksContext>();
-  else if (scheme == "heaan")
-    he2 = make_shared<HeaanContext>();
+  else if (scheme == "openfhe")
+    he2 = make_shared<OpenFheCkksContext>();
   else
     throw runtime_error("Unknown scheme " + scheme);
 
@@ -92,7 +92,7 @@ void help(const char* cmd)
        << endl;
   cout << "\tseal\tSeal's implementation for CKKS" << endl;
   cout << endl;
-  cout << "\theaan\tHEaaN's implementation for CKKS" << endl;
+  cout << "\topenfhe\topenFHE's implementation for CKKS" << endl;
   cout << endl;
   cout << "\t1\tbasic example that logs a circuit" << endl;
   cout << "\t2\tbasic example that creates a circuit and then runs it" << endl;

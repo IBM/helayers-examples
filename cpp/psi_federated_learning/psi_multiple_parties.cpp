@@ -33,10 +33,11 @@
 #include "helayers/hebase/OmpWrapper.h"
 
 #include "helayers/hebase/hebase.h"
-#include "helayers/hebase/heaan/HeaanContext.h"
+#include "helayers/hebase/openfhe/OpenFheCkksContext.h"
 #include "helayers/hebase/HelayersTimer.h"
 #include "helayers/ai/psi_federated_learning/RtsPsiManager.h"
 #include "helayers/ai/psi_federated_learning/AggregatorPsiManager.h"
+#include "helayers/math/RandUtils.h"
 
 using namespace std;
 using namespace helayers;
@@ -107,7 +108,9 @@ vector<uint64_t> runOtherParty(HeContext& he,
   uids[numSamples - 1] = oneOfaliceUids;
 
   DoubleTensor data({numSamples, 4});
-  data.initRandom();
+  RandUtils ru;
+  ru.setSeedForTest("psi_multiple_parties.runOtherParty");
+  ru.initRandom(data);
 
   RtsPsiManager psiManager(he, he, rtsId, uids, data, SHARED_SECRET);
   psiManager.setVerbosity(verbosity);
@@ -139,8 +142,8 @@ int main(int argc, char* argv[])
 
   cout << "Run Aggregator's side..." << endl;
 
-  HeaanContext he;
-  HeConfigRequirement req(pow(2, 16), 29, 51, 9);
+  OpenFheCkksContext he;
+  HeConfigRequirement req(pow(2, 16), 29, 51, 7);
   req.bootstrappable = true;
   req.automaticBootstrapping = true;
   he.init(req);
@@ -152,7 +155,9 @@ int main(int argc, char* argv[])
   initRandomUids(aliceUids);
 
   DoubleTensor aliceData({numSamples, 6});
-  aliceData.initRandom();
+  RandUtils ru;
+  ru.setSeedForTest("psi_multiple_parties.main");
+  ru.initRandom(aliceData);
 
   RtsPsiManager alicePsiManager(
       he, he, ALICE_RTS_ID, aliceUids, aliceData, SHARED_SECRET);
@@ -264,7 +269,7 @@ int main(int argc, char* argv[])
                         ", ")
          << endl
          << endl;
-    aliceData.debugPrint("Alice's Data", 1);
+    aliceData.debugPrint("Alice's Data");
     cout << endl;
     res.debugPrint(
         "Protocol Output (In a real use of the protocol, Alice will not "

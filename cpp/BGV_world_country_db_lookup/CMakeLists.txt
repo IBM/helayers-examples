@@ -29,14 +29,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_CXX_FLAGS "-Werror -fopenmp -Wfatal-errors")
 
-## Rely on the Environment variable to dictate which version of helib to use
-set(HELIB_VERSION ${HELIB_CMAKE_LISTS_VERSON})
-
-find_package(helib ${HELIB_VERSION} REQUIRED)
+find_package(OpenFHE REQUIRED)
 find_package(Boost 1.72.0 EXACT REQUIRED COMPONENTS filesystem)
 find_package(OpenSSL REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 include_directories(${HDF5_INCLUDE_DIR})
 
+include_directories(
+        ${OpenFHE_INCLUDE}
+        ${OpenFHE_INCLUDE}/third-party/include
+        ${OpenFHE_INCLUDE}/pke
+        ${OpenFHE_INCLUDE}/binfhe
+        ${OpenFHE_INCLUDE}/core)
+
 add_executable(BGV_world_country_db_lookup BGV_world_country_db_lookup.cpp)
-target_link_libraries(BGV_world_country_db_lookup helayers_helib_ext helayers helib Boost::filesystem OpenSSL::Crypto)
+target_link_libraries(BGV_world_country_db_lookup helayers_openfhe_ext helayers ${HDF5_LIBRARIES} helayers ${OpenFHE_LIBRARIES} Boost::filesystem OpenSSL::Crypto)

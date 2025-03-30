@@ -55,8 +55,8 @@ int main()
   // === CLIENT SIDE ===
   // Define hyper parameters.
   PlainModelHyperParams hp;
-  hp.logisticRegressionActivation = activation;
-  hp.numberOfFeatures = inputSize;
+  hp.logisticRegressionActivation(activation);
+  hp.numberOfFeatures(inputSize);
 
   // Define HE run requirements.
   HeRunRequirements heRunReq;

@@ -60,7 +60,7 @@ class LogisticRegression:
 
     # Return computed derived weights (dw) and derived bias (db)
     def _gradients(self, X, ypred, y):
-        return np.dot(X.T, (ypred - y)) / y.shape[0], np.sum(ypred - y) / y.shape[0]
+        return 2.0 * np.dot(X.T, (ypred - y)) / y.shape[0], np.sum(ypred - y) / y.shape[0]
 
     def predict(self, x_test):
         linear_model = np.dot(x_test, self.weights) + self.bias

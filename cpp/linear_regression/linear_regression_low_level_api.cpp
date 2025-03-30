@@ -57,7 +57,7 @@ int main()
       TextIoUtils::readMatrixFromCsvFile(dataDir + "bias.csv");
 
   PlainModelHyperParams hp;
-  hp.logisticRegressionActivation = LR_ACTIVATION_NONE;
+  hp.logisticRegressionActivation(LR_ACTIVATION_NONE);
   LogisticRegressionPlain lrPlain;
   lrPlain.initFromTensor(hp, weights, biases.at(0));
 

@@ -18,7 +18,7 @@ See table of contents and additional information here:
 [`MPC_and_ZKP/00_GettingStarted.ipynb`] - Multi Party Computation (MPC) and Zero knowledge proofs (ZKP) demos (currently supported for x86 machines only).
 [`tile_tensors/01_CTileTensor_basics.ipynb`] - A series of notebooks introducing the basics of using packing agnostic programming with HELayers using tile tensors. 
 
-The FHE demos use three backends: SEAL, HELib, and HEaaN. For most demos it is easy to switch between different backends, and explore which works best in each case.
+The FHE demos mostly use the SEAL backend. For most demos it is easy to switch between different backends, and explore which works best in each case.
 
 ## How to Use
 

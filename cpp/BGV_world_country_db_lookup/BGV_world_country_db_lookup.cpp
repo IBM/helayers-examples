@@ -27,21 +27,19 @@
 // db search algorithm for demonstration purposes.
 
 // This country lookup example is derived from the BGV database demo
-// code originally writte by Jack Crawford for a lunch and learn
+// code originally written by Jack Crawford for a lunch and learn
 // session at IBM Research (Hursley) in 2019.
-// The original example code ships with HElib and can be found at
-// https://github.com/homenc/HElib/tree/master/examples/BGV_database_lookup
 
 // See more information about this demo in the readme file.
 
 #include <iostream>
 
 #include "helayers/hebase/hebase.h"
-#include "helayers/hebase/helib/HelibBgvContext.h"
+#include "helayers/hebase/openfhe/OpenFheBgvContext.h"
+#include "helayers/hebase/openfhe/OpenFheDcrtEncoder.h"
+#include "helayers/hebase/openfhe/OpenFheDcrtCiphertext.h"
 #include "helayers/math/MathUtils.h"
 #include <fstream>
-#include <helib/ArgMap.h>
-#include <NTL/BasicThreadPool.h>
 
 using namespace helayers;
 using namespace std;
@@ -51,8 +49,10 @@ vector<pair<string, string>> read_csv(const string& filename, int maxLen);
 void run(HeContext& he,
          const string& db_filename,
          const std::string& countryName,
-         bool debug);
+         bool debug,
+         int plaintextModulus);
 vector<int> stringToAscii(const string& val);
+void usage();
 
 int main(int argc, char* argv[])
 {
@@ -60,41 +60,33 @@ int main(int argc, char* argv[])
   // faster running time with a non-realistic security level.
   // Do Not use these parameters in real applications.
 
-  // Plaintext prime modulus
-  unsigned long p = 127;
-  // Cyclotomic polynomial - defines phi(m)
-  unsigned long m = 128; // this will give 32 slots
-  // Hensel lifting (default = 1)
-  unsigned long r = 1;
-  // Number of bits of the modulus chain
-  unsigned long bits = 1000;
-  // Number of columns of Key-Switching matrix (default = 2 or 3)
-  unsigned long c = 2;
-  // Size of NTL thread pool (default =1)
-  unsigned long nthreads = 1;
   // input database file name
   string db_filename = getDataSetsDir() + "/countries/countries.csv";
   // debug output (default no debug output)
   bool debug = false;
 
+  int plaintextModulus = 257; // 786433;
+
   string countryName = "";
 
-  helib::ArgMap amap;
-  amap.arg("m", m, "Cyclotomic polynomial ring");
-  amap.arg("p", p, "Plaintext prime modulus");
-  amap.arg("r", r, "Hensel lifting");
-  amap.arg("bits", bits, "# of bits in the modulus chain");
-  amap.arg("c", c, "# fo columns of Key-Switching matrix");
-  amap.arg("nthreads", nthreads, "Size of NTL thread pool");
-  amap.arg(
-      "db_filename", db_filename, "Qualified name for the database filename");
-  amap.arg("country", countryName, "Country to search for");
-  amap.toggle().arg("-debug", debug, "Toggle debug output", "");
-  amap.parse(argc, argv);
-
-  // set NTL Thread pool size
-  if (nthreads > 1)
-    NTL::SetNumThreads(nthreads);
+  int i = 1;
+  while (i < argc) {
+    string arg = argv[i++];
+    if (arg == "--help") {
+      usage();
+      return 0;
+    }
+    if (arg == "--plaintext_modulus")
+      plaintextModulus = atoi(argv[i++]);
+    else if (arg == "--db_filename")
+      db_filename = argv[i++];
+    else if (arg == "--country")
+      countryName = argv[i++];
+    else if (arg == "--debug")
+      debug = true;
+    else
+      throw runtime_error("Unsupported argument: " + arg);
+  }
 
   cout << "\n*********************************************************";
   cout << "\n*           Privacy Preserving Search Example           *";
@@ -111,35 +103,73 @@ int main(int argc, char* argv[])
   // Initialize context
   cout << "\nInitializing the Context ... " << endl;
 
-  // To setup helib using the hebase layer, let's first
-  // copy all configuration params to an HelibConfig object:
-  HelibConfig conf;
-  conf.p = p;
-  conf.m = m;
-  conf.r = r;
-  conf.L = bits;
-  conf.c = c;
-
-  // Next we'll initialize a BGV scheme in helib.
-  // The following two lines perform full intializiation
+  // Next we'll initialize a BGV scheme in openFHE.
+  // The following lines perform full initialization
   // Including key generation.
   // (We added code for timing it).
-  HELIB_NTIMER_START(timer_Context);
-  HelibBgvContext he;
-  he.init(conf);
-  HELIB_NTIMER_STOP(timer_Context);
+  OpenFheBgvContext he;
+  cout << "initializing he..." << endl;
 
-  // Helib-BGV is now ready to start doing some HE work.
-  // which we'll do in the follwing function, defined below
-  run(he, db_filename, countryName, debug);
+  // Since we store ascii codes, we need it at least to be able
+  // to handle the numbers 0...127
+  always_assert(plaintextModulus >= 127);
+
+  HeConfigRequirement req = HeConfigRequirement::insecure(32, 16);
+  req.plaintextModulus = plaintextModulus;
+  HELAYERS_TIMER_PUSH("Initialization");
+
+  he.init(req);
+  HELAYERS_TIMER_POP();
+
+  // OpenFHE-BGV is now ready to start doing some HE work.
+  // which we'll do in the following function, defined below
+  run(he, db_filename, countryName, debug, plaintextModulus);
 
   return 0;
+}
+
+void usage()
+{
+  cout << "Usage:" << endl;
+  cout << endl;
+  cout << "\t--plaintext_modulus\t\tPlaintext modulus" << endl;
+  cout << "\t--db_filename\t\t\tQualified name for the database filename"
+       << endl;
+  cout << "\t--country <int>\t\t\tCountry to search for" << endl;
+  cout << "\t---debug\t\t\tDebug" << endl;
+  cout << endl;
+}
+
+void pow(HeContext& he, CTile& ctile, int degree)
+{
+  bool yIsOne = true;
+  CTile y(he);
+  CTile x = ctile;
+
+  while (degree > 1) {
+    if ((degree % 2) == 0) {
+      ctile.square();
+      degree = degree / 2;
+    } else {
+      if (yIsOne) {
+        y = ctile;
+        yIsOne = false;
+      } else {
+        y.multiply(ctile);
+      }
+      ctile.square();
+      degree = (degree - 1) / 2;
+    }
+  }
+  if (!yIsOne)
+    ctile.multiply(y);
 }
 
 void run(HeContext& he,
          const string& db_filename,
          const std::string& countryName,
-         bool debug)
+         bool debug,
+         int plaintextModulus)
 {
 
   // The run function receives an abstract HeContext class.
@@ -147,17 +177,12 @@ void run(HeContext& he,
   // implementation.
 
   // First let's print general information on our library and scheme.
-  // This will print their names, and the configuraton details.
+  // This will print their names, and the configuration details.
   he.printSignature();
 
   // However we do have some requirements that we can
-  // assert exists:
-  // We require the plaintext to be over modular arithmetic.
-  // We'll rely on that later.
-  always_assert(he.getTraits().getIsModularArithmetic());
-  // Since we store ascii codes, we need it at least to be able
-  // to handle the numbers 0...127
-  always_assert(he.getTraits().getArithmeticModulus() >= 127);
+
+  always_assert(he.getTraits().isModularArithmetic());
 
   // Next, print the security level
   // Note: This will be negligible to improve performance time.
@@ -175,11 +200,12 @@ void run(HeContext& he,
 
   cout << "\n---Initializing the encrypted key,value pair database ("
        << country_db.size() << " entries)...";
-  cout << "\nConverting strings to numeric representation into Ptxt objects ..."
+  cout << "\nConverting strings to numeric representation into Ptxt objects "
+          "..."
        << endl;
 
   // We'll now encrypt our country-capital database.
-  HELIB_NTIMER_START(timer_CtxtCountryDB);
+  HELAYERS_TIMER_PUSH("CountryDB");
   // The encoder class handles both encoding and encrypting.
   Encoder enc(he);
   // This is the database: a vector of pairs of CTile-s.
@@ -196,14 +222,11 @@ void run(HeContext& he,
     CTile capital(he);
     enc.encodeEncrypt(capital, stringToAscii(country_capital_pair.second));
     // Add the pair to the database
+
+    vector<int> resInt = enc.decryptDecodeInt(country);
     encrypted_country_db.emplace_back(std::move(country), std::move(capital));
   }
-  HELIB_NTIMER_STOP(timer_CtxtCountryDB);
-
-  if (debug) {
-    helib::printNamedTimer(cout << endl, "timer_Context");
-    helib::printNamedTimer(cout, "timer_CtxtCountryDB");
-  }
+  HELAYERS_TIMER_POP();
 
   cout << "\nInitialization Completed - Ready for Queries" << endl;
   cout << "--------------------------------------------" << endl;
@@ -221,23 +244,21 @@ void run(HeContext& he,
   cout << "Looking for the Capital of " << query_string << endl;
   cout << "This may take a few minutes ... " << endl;
 
-  HELIB_NTIMER_START(timer_TotalQuery);
-  HELIB_NTIMER_START(timer_EncryptQuery);
+  HELAYERS_TIMER_PUSH("TotalQuery");
+  HELAYERS_TIMER_PUSH("EncryptQuery");
 
   // Encrypt the query similar to the way we encrypted
   // the country and capital names
   CTile query(he);
   enc.encodeEncrypt(query, stringToAscii(query_string));
 
-  HELIB_NTIMER_STOP(timer_EncryptQuery);
+  HELAYERS_TIMER_POP();
 
   /************ Perform the database search ************/
 
-  HELIB_NTIMER_START(timer_QuerySearch);
+  HELAYERS_TIMER_PUSH("QuerySearch");
   vector<CTile> mask;
   mask.reserve(country_db.size());
-  NativeFunctionEvaluator eval(he);
-  long modulusP = he.getTraits().getArithmeticModulus();
 
   // For every entry in our database we perform the following
   // calculation:
@@ -247,57 +268,53 @@ void run(HeContext& he,
     // Calculate the difference
     // In each slot now we'll have 0 when characters match,
     // or non-zero when there's a mismatch
+
     mask_entry.sub(query);
 
     // Fermat's little theorem:
     // Since the underlying plaintext are in modular arithmetic,
-    // Raising to the power of modulusP convers all non-zero values
+    // Raising to the power of modulusP- 1 converts all non-zero values
     // to 1.
-    eval.powerInPlace(mask_entry, modulusP - 1);
+
+    CTile res = mask_entry;
+    pow(he, res, plaintextModulus - 1);
 
     // Negate the ciphertext
     // Now we'll have 0 for match, -1 for mismatch
-    mask_entry.negate();
+    res.negate();
 
     // Add +1
     // Now we'll have 1 for match, 0 for mismatch
-    mask_entry.addScalar(1);
+
+    vector<int> valsOne = vector<int>(he.slotCount(), 1);
+    CTile one(he);
+    enc.encodeEncrypt(one, valsOne);
+    res.add(one);
 
     // We'll now multiply all slots together, since
     // we want a complete match across all slots.
 
-    // If slot count is a power of 2 there's an efficient way
+    // If slot count is a power of 2 (our case 32) there's an efficient way
     // to do it:
     // we'll do a rotate-and-multiply algorithm, similar to
     // a rotate-and-sum one.
-    if (MathUtils::isPowerOf2(he.slotCount())) {
-      for (int rot = 1; rot < he.slotCount(); rot *= 2) {
-        CTile tmp(mask_entry);
-        tmp.rotate(-rot);
-        mask_entry.multiply(tmp);
-      }
-    } else {
-      // Otherwise we'll create all possible rotations, and multiply all of
-      // them.
-      // Note that for non powers of 2 a rotate-and-multiply algorithm
-      // can still be used as well, though it's more complicated and
-      // beyond the scope of this example.
-      vector<CTile> rotated_masks(he.slotCount(), mask_entry);
-      for (int i = 1; i < rotated_masks.size(); i++)
-        rotated_masks[i].rotate(-i); // Rotate each of the masks
-      eval.totalProduct(mask_entry,
-                        rotated_masks); // Multiply each of the masks
+
+    for (int rot = 1; rot < he.slotCount(); rot *= 2) {
+      CTile tmp(res);
+      tmp.rotate(-rot);
+      res.multiply(tmp);
     }
 
     // mask_entry is now either all 1s if query==country,
     // or all 0s otherwise.
     // After we multiply by capital name it will be either
     // the capital name, or all 0s.
-    mask_entry.multiply(encrypted_pair.second);
+    res.multiply(encrypted_pair.second);
+
     // We collect all our findings.
-    mask.push_back(mask_entry);
+    mask.push_back(res);
   }
-  HELIB_NTIMER_STOP(timer_QuerySearch);
+  HELAYERS_TIMER_POP();
 
   // Aggregate the results into a single ciphertext
   // Note: This code is for educational purposes and thus we try to refrain
@@ -308,33 +325,25 @@ void run(HeContext& he,
 
   // /************ Decrypt and print result ************/
 
-  HELIB_NTIMER_START(timer_DecryptQueryResult);
+  HELAYERS_TIMER_PUSH("DecryptQueryResult");
   vector<int> res = enc.decryptDecodeInt(value);
-  HELIB_NTIMER_STOP(timer_DecryptQueryResult);
+  HELAYERS_TIMER_POP();
 
   // Convert from ASCII to a string
   string string_result;
   for (long i = 0; i < res.size(); ++i)
     string_result.push_back(static_cast<long>(res[i]));
 
-  HELIB_NTIMER_STOP(timer_TotalQuery);
-
-  // Print DB Query Timers
-  if (debug) {
-    helib::printNamedTimer(cout << endl, "timer_EncryptQuery");
-    helib::printNamedTimer(cout, "timer_QuerySearch");
-    helib::printNamedTimer(cout, "timer_DecryptQueryResult");
-    cout << endl;
-  }
+  HELAYERS_TIMER_POP();
 
   if (string_result.at(0) == 0x00) {
     string_result = "Country name not in the database.\n*** Please make sure "
                     "to enter the name of an European Country\n*** with the "
                     "first letter in upper case.";
   }
-
+  if (debug)
+    HELAYERS_TIMER_PRINT_MEASURES_SUMMARY_FLAT();
   cout << "\nQuery result: " << string_result << endl;
-  helib::printNamedTimer(std::cout, "timer_TotalQuery");
 }
 
 // Utility function to read <K,V> CSV data from file
