@@ -22,83 +22,31 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
+#include <chrono>
 #include "helayers/math/TTConvolutionInterleaved.h"
 #include "helayers/math/TTEncoder.h"
 #include "helayers/math/TTFunctionEvaluator.h"
-#include "helayers/hebase/heaan/HeaanContext.h"
+#include "helayers/hebase/openfhe/OpenFheCkksContext.h"
+#include "helayers/hebase/mockup/MockupContext.h"
 
 using namespace std;
+using namespace chrono;
 using namespace helayers;
 
-const int N = 6;
-const int M = 6; // board size is N*M
+int N = 256;
+int M = 256; // board size is N*M
+int iterations = 1;
+bool verbose = false;
+bool mockup = false;
+bool useLagrange = false;
 
-const int DEFAULT_ITERATIONS = 4;
-
-DoubleTensor plainBoard({2, M, N});
+DoubleTensor* plainBoard;
 
 shared_ptr<CTileTensor> tensorBoard; // true board
 TTShape inputShape;
 
-struct InterleavedConvolutionParameters // for the neighbour convolution
-{
-  int numChannels;
-  int numRows;
-  int numCols;
-  int numFilters;
-  int numBatches;
-
-  int filtersNumRows;
-  int filtersNumCols;
-
-  int strideRows;
-  int strideCols;
-
-  int externalRows{-1};
-  int externalCols{-1};
-
-  Padding2d padding;
-
-  void setImageData(int c, int r, int col, int b)
-  {
-    numChannels = c;
-    numRows = r;
-    numCols = col;
-    numBatches = b;
-  }
-
-  void setFilterData(int f, int r, int c, int sr, int sc)
-  {
-    numFilters = f;
-    filtersNumRows = r;
-    filtersNumCols = c;
-    strideRows = sr;
-    strideCols = sc;
-  }
-
-  void setExternalSizes(int rows, int cols)
-  {
-    externalRows = rows;
-    externalCols = cols;
-  }
-
-  void setSamePadding()
-  {
-    padding = Padding2d::same(numRows,
-                              numCols,
-                              filtersNumRows,
-                              filtersNumCols,
-                              strideRows,
-                              strideCols);
-  }
-
-  void setValidPadding() { padding = Padding2d(); }
-
-  HeContext* he;
-};
-
-InterleavedConvolutionParameters p; // global convolution parameters val
+void printBoard(const string& name, const DoubleTensor& board);
+void printEncryptedBoard(CTileTensor& board);
 
 void cleanTensor(CTileTensor& x) // cleaning the tensor (inplace)
 {
@@ -117,156 +65,112 @@ void cleanTensor(CTileTensor& x) // cleaning the tensor (inplace)
   return;
 }
 
-void checkEqualTensorInPlace(
-    CTileTensor& x,
-    int a,
-    TTEncoder& enc,
-    helayers::HeContext& he,
-    bool useLagrange =
-        true) // write in res 1 if dec(x)==a and 0 otherwise (for every slot)
+// Each slot of x becomes 1 if it equals to a, to 0 otherwise
+void checkEqualTensorInPlace(CTileTensor& x, int a, helayers::HeContext& he)
 {
+  TTEncoder enc(he);
+
   if (useLagrange) {
-    if (a < 0 || a > 8) {
-      std::cout << "we only support integers between 0 and 8" << std::endl;
-    }
+    if (a < 0 || a > 8)
+      throw runtime_error("we only support integers between 0 and 8");
     TTFunctionEvaluator fe(he);
     std::vector<double> range = {0, 1, 2, 3, 4, 5, 6, 7, 8};
     fe.computeLagrangeBasis(x, x, range, a);
     return;
   }
   TTFunctionEvaluator fe(he);
-  CTileTensor tmp(he);
-  DoubleTensor plainDT;
-  plainDT.init(inputShape.getOriginalSizes(), static_cast<double>(a));
-  enc.encodeEncrypt(tmp, inputShape, plainDT);
 
-  x.sub(tmp); // x==a is the same as x-a ==0
-  x.multiplyScalar(
-      1.0 / 9.0); // scaling, since sign in place works when diff is at max 1
-  fe.signInPlace(x, 8, 3);
+  x.addScalar(-a);
+  // elements are in the range [0,9], call signInPlace with maxValue=9.
+  // Set the number of function steps to 8 and 3.
+  fe.signInPlace(x, 8, 3, 9);
 
-  plainDT.init(inputShape.getOriginalSizes(), 1);
-  enc.encodeEncrypt(tmp, inputShape, plainDT);
-
-  x.add(tmp);
-  x.multiplyScalar(0.5); // from [-1.1] to [0,1]
-
-  tmp.sub(x);
-  x.multiply(tmp);
-  x.multiplyScalar(4);
+  // Compute (x-1)(x+1)
+  x.square();
+  x.negate();
+  x.addScalar(+1);
 }
 
-// initializg the board
-// starting pos is a binary vector for the starting position
-// the ordering for starting pos can be wierd: the indices {x_1,x_2,x_3,x_4} for
-// a 2X2 board will create the following board:
-
-// x_1 x_3
-// x_2 x_4
-
-// where x_i should be 0 or 1
-// for example the vector {1,0,0,1} will create the board
-// 1 0
-// 0 1
-
-// and the vector {0,1,0,0} will create the board
-// 0 0
-// 1 0
-
-// also initializing the convolution parameters
-void initBoard(TTEncoder& enc, HeContext& he, std::vector<double> startingPos)
+// Initialize the encrypted board (tensorBoard) and the plaintext board
+// (plainBoard).
+//
+// startingPos is a binary 2D tensor holding the initial setup,
+// where 1 indicates an occupied cell and 0 indicates a free cell.
+void initBoard(TTEncoder& enc, HeContext& he, DoubleTensor& startingPos)
 {
-  p.he = (&he);
-  p.setImageData(1, M, N, 1);
-  p.setFilterData(1, 3, 3, 1, 1);
-  p.setSamePadding();
-  TTShape baseShape{1, 4, p.he->slotCount() / 4, 1, 1};
+  *plainBoard = startingPos;
 
-  const int imageRowDim = 1;
-  const int imageColDim = 2;
-  const int imageFilterDim = 3; // working cxyfb
+  // Counting the the neighbors is done efficiently using sum-pooling.
+  // The sum-pooling mechanism is shared with convolution mechanism which
+  // assumes filter dimensions. These are degenerate dims in our case.
+  startingPos.reshape({1, M, N, 1, 1});
 
-  int numRowsWithPadding = p.numRows;
-  int numColsWithPadding = p.numCols;
+  TTShape baseShape{1, 256, he.slotCount() / 256, 1, 1};
+  inputShape = baseShape.getWithDuplicatedDim(3);
+  inputShape.setOriginalSizes({1, M, N, 1, 1});
 
-  inputShape = baseShape.getWithDuplicatedDim(imageFilterDim);
-  inputShape.setOriginalSizes(
-      {p.numChannels, numRowsWithPadding, numColsWithPadding, 1, p.numBatches});
+  // Set the dimensions associated with the X and Y dimensions of the board to
+  // be interleaved. This improves the efficiency of computing the number of
+  // live neighbors of cells
+  inputShape.getDim(1).setInterleaved(true, 1);
+  inputShape.getDim(2).setInterleaved(true, 1);
 
-  inputShape.getDim(imageRowDim).setInterleaved(true, p.strideRows);
-  inputShape.getDim(imageColDim).setInterleaved(true, p.strideCols);
-
-  if (p.externalRows != -1)
-    inputShape.getDim(imageRowDim).setInterleavedExternalSize(p.externalRows);
-  if (p.externalCols != -1)
-    inputShape.getDim(imageColDim).setInterleavedExternalSize(p.externalCols);
-
-  std::vector<double> matrix(M * N);
-  for (int i = 0; i < M * N; ++i) {
-    matrix[i] = startingPos[i];
-  }
-  DoubleTensor heInput({M, N});
-
-  heInput.init(inputShape.getOriginalSizes(), matrix);
   tensorBoard = make_shared<CTileTensor>(he);
-  enc.encodeEncrypt(*tensorBoard, inputShape, heInput);
-
-  for (int x = 0; x < M; x++) {
-    for (int y = 0; y < N; y++) {
-      plainBoard.at(0, x, y) = startingPos[N * y + x];
-    }
-  }
+  enc.encodeEncrypt(*tensorBoard, inputShape, startingPos);
 }
 
 // compute plain step (for comparison)
 // in order to not overwrite the current board with the computations results
 // for the next iteration, we have a "current" board and a "next" board
 // we switch between the boards along the iterations
-static inline void computePlainStep(int iterationCounter, int x, int y)
+static inline double computePlainStep(int x, int y)
 {
-  int currentBoardIndex = iterationCounter % 2;
   double plainNeighbours = 0;
   for (int xpos = max(0, x - 1); xpos < min(M, x + 2); xpos++) {
     for (int ypos = max(0, y - 1); ypos < min(N, y + 2); ypos++) {
-      plainNeighbours += plainBoard.at(currentBoardIndex, xpos, ypos);
+      plainNeighbours += plainBoard->at(xpos, ypos);
     }
   }
 
-  plainNeighbours -= (plainBoard.at(currentBoardIndex, x, y));
-  double plainThreeCheck = int(plainNeighbours == 3);
-  double plainTwoCheck = int(plainNeighbours == 2);
-  plainTwoCheck *= (plainBoard.at(currentBoardIndex, x, y));
+  plainNeighbours -= (plainBoard->at(x, y));
+  double plainThreeCheck = (plainNeighbours == 3) ? 1 : 0;
+  double plainTwoCheck = (plainNeighbours == 2) ? 1 : 0;
+  plainTwoCheck *= plainBoard->at(x, y);
   plainThreeCheck += (plainTwoCheck);
-  plainBoard.at(1 - currentBoardIndex, x, y) = plainThreeCheck;
+  return plainThreeCheck;
 }
 
 // compute one step in the tensor board
-static void tensorStep(TTEncoder& enc, HeContext& he, int step)
+static void tensorStep(HeContext& he)
 {
   HELAYERS_TIMER_SECTION("iteration");
 
+  const int strideRows = 1;
+  const int strideCols = 1;
+
   cout << "  - Compute plain step" << endl;
+  DoubleTensor newPlainBoard({M, N});
   for (int x = 0; x < M; x++) {
     for (int y = 0; y < N; y++) {
-      computePlainStep(step, x, y); // for plain comparison
+      newPlainBoard.at(x, y) = computePlainStep(x, y); // for plain comparison
     }
   }
+  *plainBoard = newPlainBoard;
 
-  cout << "  - Bootstrap" << endl;
-  (*tensorBoard).bootstrap(); // the best bootsrapping point is here, where
-                              // there is only one CTileTensor
+  TTConvConfig cc(he, tensorBoard->getShape(), 3, 3, 0, false);
 
-  cout << "  - Get number of neighbours" << endl;
+  cc.setStrides(strideRows, strideCols);
+  cc.setDefaultDims(true); // cxyfb = true
+
+  // To add all neighbors of all cells we use SumPooling with on a 3x3 window.
+  // The padding policy in this case padds the board with non-occupied cells.
+  Padding2d padding = Padding2d::same(M, N, 3, 3, 3, 3);
+  cc.setPadding(padding);
+
+  // will store the number of neighbours each cell has
   CTileTensor neighbours(he);
-  TTConvConfig cc(tensorBoard->getHeContext(),
-                  tensorBoard->getShape(),
-                  p.filtersNumRows,
-                  p.filtersNumCols);
-  cc.setStrides(p.strideRows, p.strideCols);
-  cc.setDefaultDims(true);
-  cc.setPadding(p.padding);
-  TTConvFilters ff(cc);
-  TTConvolutionInterleaved sumPoolEngine(tensorBoard, ff);
+  TTConvFilters cf(cc);
+  TTConvolutionInterleaved sumPoolEngine(tensorBoard, cf);
   neighbours = sumPoolEngine.getConvolution(); // get the number of neighbours
                                                // with the convolution
 
@@ -275,15 +179,15 @@ static void tensorStep(TTEncoder& enc, HeContext& he, int step)
                                 // the cell status to be included in the sum
 
   cout << "  - Check for 2/3 neighbours" << endl;
-  CTileTensor threeCheck(
-      neighbours); // if a cell has 3 neighbours, then the corresponding tile in
-                   // threeCheck will have a value of 1
-  CTileTensor twoCheck(
-      neighbours); // if a cell has 2 neighbours, then the corresponding tile in
-                   // twoCheck will have a value of 1
+  // if a cell has 3 neighbours, then the corresponding tile in threeCheck will
+  // have a value of 1
+  CTileTensor threeCheck(neighbours);
+  // if a cell has 2 neighbours, then the corresponding tile in twoCheck will
+  // have a value of 1
+  CTileTensor twoCheck(neighbours);
 
-  checkEqualTensorInPlace(threeCheck, 3, enc, he);
-  checkEqualTensorInPlace(twoCheck, 2, enc, he);
+  checkEqualTensorInPlace(threeCheck, 3, he);
+  checkEqualTensorInPlace(twoCheck, 2, he);
 
   twoCheck.multiply(*tensorBoard);
   threeCheck.add(twoCheck);
@@ -296,12 +200,12 @@ static void tensorStep(TTEncoder& enc, HeContext& he, int step)
   *tensorBoard = threeCheck;
 }
 
-void printBoard(const string& name, int i, const DoubleTensor& board)
+void printBoard(const string& name, const DoubleTensor& board)
 {
   std::cout << name << ":" << std::endl;
   for (int x = 0; x < M; x++) {
     for (int y = 0; y < N; y++) {
-      double val = board.at(i, x, y);
+      double val = board.at(x, y);
 
       if (val >= 0.5) {
         std::cout << "⬜";
@@ -313,83 +217,122 @@ void printBoard(const string& name, int i, const DoubleTensor& board)
   }
 }
 
-void printEncryptedBoard(TTEncoder& enc, int parity = 0)
+void printEncryptedBoard(CTileTensor& board)
 {
-  DoubleTensor decryptedBoard = enc.decryptDecodeDouble(*tensorBoard);
+  TTEncoder enc(board.getHeContext());
+  DoubleTensor decryptedBoard = enc.decryptDecodeDouble(board);
+  decryptedBoard.reshape({M, N});
   double max = 0;
   double avg = 0;
-  printBoard("Ciphertext board", 0, decryptedBoard);
+  printBoard("Ciphertext board", decryptedBoard);
   for (size_t i = 0; i < M; ++i) {
     for (size_t j = 0; j < N; ++j) {
-      double dif =
-          abs(plainBoard.at(parity, i, j) - decryptedBoard.at(0, i, j, 0, 0));
+      double dif = abs(plainBoard->at(i, j) - decryptedBoard.at(i, j));
       if (dif > max) {
         max = dif;
       }
       avg += dif;
     }
   }
+
+  // printBoard("Plaintext board", *plainBoard);
+
   std::cout << "max difference from plaintext is " << max
             << " and the average difference is " << avg / (M * N) << std::endl;
 }
 
-void help()
+void benchmarkGameOfLife()
 {
-  cout << "Usage: ./game_of_life [--iterations n]" << endl;
-  cout << "--iterations n\tNumber of iterations (default: "
-       << DEFAULT_ITERATIONS << ")" << endl;
-  exit(1);
+  shared_ptr<HeContext> he;
+  HeConfigRequirement reqGameOfLife;
+  if (mockup) {
+    he = make_shared<MockupContext>();
+    reqGameOfLife = HeConfigRequirement::insecure(pow(2, 16), // numSlots
+                                                  13, // multiplicationDepth
+                                                  24, // fractionalPartPrecision
+                                                  5   // integerPartPrecision
+    );
+    reqGameOfLife.bootstrappable = true;
+    reqGameOfLife.bootstrapConfig = BootstrapConfig();
+    reqGameOfLife.bootstrapConfig->targetChainIndex = 12;
+    reqGameOfLife.bootstrapConfig->minChainIndexForBootstrapping = 3;
+  } else {
+    he = make_shared<OpenFheCkksContext>();
+
+    reqGameOfLife = HeConfigRequirement(pow(2, 14), // numSlots
+                                        20,         // multiplicationDepth
+                                        29,         // fractionalPartPrecision
+                                        5           // integerPartPrecision
+    );
+    reqGameOfLife.bootstrappable = true;
+  }
+
+  std::cout << "Initializing HeContext . . ." << std::endl;
+  he->init(reqGameOfLife);
+  if (!useLagrange)
+    he->setAutomaticBootstrapping(true);
+
+  TTEncoder ttencoder(*he);
+
+  DoubleTensor startingPos({M, N});
+  // starting position a glider
+  startingPos.at(0, 0) = 1;
+  startingPos.at(1, 1) = 1;
+  startingPos.at(1, 2) = 1;
+  startingPos.at(0, 2) = 1;
+  startingPos.at(2, 1) = 1;
+  initBoard(ttencoder, *he, startingPos);
+
+  for (int i = 0; i < iterations; ++i) {
+
+    if (verbose)
+      printEncryptedBoard(*tensorBoard);
+
+    auto start = high_resolution_clock::now();
+
+    if ((i != 0) && (useLagrange)) {
+      tensorBoard->bootstrap(); // the best bootsrapping point is here, where
+      // there is only one CTileTensor
+    }
+
+    tensorStep(*he);
+
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<seconds>(end - start);
+
+    std::cout << "tensor step took " << duration.count() << std::endl;
+
+    // HELAYERS_TIMER_PRINT_MEASURES_SUMMARY();
+    // cout << "Exiting after one iteration" << endl;
+  }
 }
 
 int main(int argc, char* argv[])
 {
-  int iterations = DEFAULT_ITERATIONS;
   int i = 1;
   while (i < argc) {
     string arg = argv[i++];
     if (arg == "--iterations" && i < argc)
       iterations = stoi(argv[i++]);
-    else
-      help();
+    else if (arg == "--size" && i < argc)
+      N = M = stoi(argv[i++]);
+    else if (arg == "--lagrange")
+      useLagrange = true;
+    else if (arg == "--verbose")
+      verbose = true;
+    else if (arg == "--mockup")
+      mockup = true;
+    else {
+      cerr << "Usage:" << endl;
+      cerr << "     --iterations ITER" << endl;
+      cerr << "     --verbose" << endl;
+      cerr << "     --mockup" << endl;
+      cerr << "     --lagrange" << endl;
+      cerr << "     --size N" << endl;
+      throw runtime_error(string("Unknown argument ") + arg);
+    }
   }
+  plainBoard = new DoubleTensor({M, N});
 
-  shared_ptr<HeContext> he = make_shared<HeaanContext>();
-  HeConfigRequirement req(pow(2, 15), // numSlots
-                          9,          // multiplicationDepth
-                          24,         // fractionalPartPrecision
-                          5           // integerPartPrecision
-  );
-  req.bootstrappable = true;
-  req.automaticBootstrapping = true;
-  std::cout << "Initializing HeContext . . ." << std::endl;
-  he->init(req);
-  std::cout << "Finished context initialization" << std::endl;
-
-  TTEncoder ttencoder(*he);
-
-  std::vector<double> startingPos(M * N); // starting position
-  startingPos[0] = 1;
-  startingPos[M + 1] = 1;
-  startingPos[M + 2] = 1;
-  startingPos[2 * M] = 1;
-  startingPos[2 * M + 1] = 1; // glider
-  initBoard(ttencoder, *he, startingPos);
-
-  for (int i = 0; i < iterations; ++i) {
-    std::cout << "Starting iteration " << i + 1 << "/" << iterations
-              << std::endl;
-    printBoard("Plain board", i % 2, plainBoard);
-    printEncryptedBoard(ttencoder, i % 2);
-    std::cout << "Computing next step" << std::endl;
-    tensorStep(ttencoder, *he, i);
-    std::cout << "Finished iteration " << i + 1 << "/" << iterations
-              << std::endl
-              << std::endl;
-  }
-
-  HELAYERS_TIMER_PRINT_MEASURE_SUMMARY("iteration");
-
-  // explicitly clean before HEaaN own destructor
-  tensorBoard.reset();
-  he.reset();
+  benchmarkGameOfLife();
 }

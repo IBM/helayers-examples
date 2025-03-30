@@ -34,7 +34,7 @@
 #include "helayers/ai/HeModel.h"
 #include "helayers/ai/AiGlobals.h"
 #include "helayers/math/MathGlobals.h"
-#include "helayers/hebase/heaan/HeaanContext.h"
+#include "helayers/hebase/openfhe/OpenFheCkksContext.h"
 
 using namespace std;
 using namespace std::chrono;
@@ -93,13 +93,13 @@ int main()
   // Define hyper parameters.
   cout << "Initialising Logistic Regression Training . . ." << endl;
   PlainModelHyperParams hp;
-  hp.numberOfFeatures = inputSize;
-  hp.fitHyperParams.numberOfEpochs = numEpochs;
-  hp.fitHyperParams.numberOfIterations = 1;
-  hp.fitHyperParams.learningRate = learnRate;
-  hp.logisticRegressionActivation = activation;
-  hp.trainable = true;
-  hp.verbose = false;
+  hp.numberOfFeatures(inputSize);
+  hp.fitHyperParams.numberOfEpochs(numEpochs);
+  hp.fitHyperParams.numberOfIterations(1);
+  hp.fitHyperParams.learningRate(learnRate);
+  hp.logisticRegressionActivation(activation);
+  hp.trainable(true);
+  hp.verbose(false);
 
   // Define HE LR variable. It represents a model that's encoded, and
   // possible encrypted, under FHE, and supports fit and/or predict.
@@ -108,8 +108,8 @@ int main()
 
   // Define HE run requirements.
   HeRunRequirements heRunReq;
-  cout << "Initializing HEaaN . . ." << endl;
-  heRunReq.setHeContextOptions({make_shared<HeaanContext>()});
+  cout << "Initializing Fhe Ckks . . ." << endl;
+  heRunReq.setHeContextOptions({make_shared<OpenFheCkksContext>()});
   heRunReq.setMaxContextMemory(10L * 1024L * 1024L * 1024L); // 10 GB
   heRunReq.optimizeForBatchSize(batchSize);
 

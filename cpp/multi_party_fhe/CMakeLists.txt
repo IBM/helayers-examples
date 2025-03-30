@@ -29,7 +29,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Release)
 set(CMAKE_CXX_FLAGS "-Werror -fopenmp -Wfatal-errors")
 
-find_package(Palisade REQUIRED)
+find_package(OpenFHE REQUIRED)
 find_package(Boost 1.72.0 EXACT REQUIRED COMPONENTS filesystem)
 find_package(ONNX REQUIRED)
 find_package(Protobuf REQUIRED)
@@ -37,12 +37,12 @@ find_package(OpenSSL REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 include_directories(${HDF5_INCLUDE_DIR})
 include_directories(
-        ${PALISADE_INCLUDE}
-        ${PALISADE_INCLUDE}/third-party/include
-        ${PALISADE_INCLUDE}/pke
-        ${PALISADE_INCLUDE}/binfhe
-        ${PALISADE_INCLUDE}/core)
+        ${OpenFHE_INCLUDE}
+        ${OpenFHE_INCLUDE}/third-party/include
+        ${OpenFHE_INCLUDE}/pke
+        ${OpenFHE_INCLUDE}/binfhe
+        ${OpenFHE_INCLUDE}/core)
 
 add_executable(multi_party_fhe multi_party_fhe.cpp)
-target_link_libraries(multi_party_fhe helayers_palisade_ext onnx ${HDF5_LIBRARIES} helayers ${PALISADE_LIBRARIES} Boost::filesystem OpenSSL::Crypto)
+target_link_libraries(multi_party_fhe helayers_openfhe_ext onnx ${HDF5_LIBRARIES} helayers ${OpenFHE_LIBRARIES} Boost::filesystem OpenSSL::Crypto)
 target_link_libraries(multi_party_fhe ${HDF5_LIBRARIES})

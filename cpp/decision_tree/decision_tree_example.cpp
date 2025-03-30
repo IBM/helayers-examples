@@ -27,7 +27,7 @@
 #include "helayers/ai/decision_tree/DecisionTree.h"
 #include "helayers/ai/HeModel.h"
 #include "helayers/hebase/hebase.h"
-#include "helayers/hebase/heaan/HeaanContext.h"
+#include "helayers/hebase/seal/SealCkksContext.h"
 #include "helayers/hebase/mockup/MockupContext.h"
 
 #include <iomanip>
@@ -35,6 +35,8 @@
 
 using namespace std;
 using namespace helayers;
+
+// This demo uses SEAL backend since release 1.5.5
 
 static void assessResults(const DoubleTensor& predictedLabels,
                           const DoubleTensor& origLabels)
@@ -96,7 +98,7 @@ int main(int argc, char** argv)
   hyperParams.load(hyperParamsFile);
 
   HeRunRequirements heRunReq;
-  heRunReq.setHeContextOptions({make_shared<HeaanContext>()});
+  heRunReq.setHeContextOptions({make_shared<SealCkksContext>()});
 
   shared_ptr<HeModel> dtree = make_shared<DTree>();
   dtree->encodeEncrypt({dtFilePath}, heRunReq, hyperParams);

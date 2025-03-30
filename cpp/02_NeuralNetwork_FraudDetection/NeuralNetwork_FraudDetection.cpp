@@ -43,8 +43,8 @@
 using namespace std;
 using namespace helayers;
 
-void assesResults(const DoubleTensor& predictedLabels,
-                  const DoubleTensor& origLabels)
+void assessResults(const DoubleTensor& predictedLabels,
+                   const DoubleTensor& origLabels)
 {
   DimInt batchSize = predictedLabels.getDimSize(0);
   int truePositives = 0, falsePositives = 0, trueNegatives = 0,
@@ -158,7 +158,7 @@ int main()
   // dataset while operating on a trusted client environment. The model and data
   // used in this demo correspond to a credit card fraud dataset. For
   // convenience, the model has been pre-trained and is available in
-  // examples/python/notebooks/data_gen folder.
+  // examples/data/net_fraud folder.
 
   // 1.1 load the model and data.
   string inputPath = getDataSetsDir() + "/net_fraud";
@@ -247,7 +247,7 @@ int main()
   // As this classification problem is a binary one, we will assess the results
   // by comparing the positive and negative classifications with the true
   // labels.
-  assesResults(*plainPredictions, labels);
+  assessResults(*plainPredictions, labels);
   HELAYERS_TIMER_PRINT_MEASURE_SUMMARY("predict");
   cout << "used RAM = " << MemoryUtils::getUsedRam() << " (MB)" << endl;
 }

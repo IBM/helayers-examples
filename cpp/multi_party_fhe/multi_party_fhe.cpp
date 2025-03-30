@@ -23,7 +23,7 @@
  */
 
 #include "helayers/hebase/hebase.h"
-#include "helayers/hebase/palisade/PalisadeCkksContext.h"
+#include "helayers/hebase/openfhe/OpenFheCkksContext.h"
 #include "helayers/hebase/mockup/MockupContext.h"
 #include "helayers/hebase/InitProtocol.h"
 #include "helayers/hebase/DecryptProtocol.h"
@@ -54,8 +54,8 @@ will not be secure, since it requires the parties to trust the holder of the
 secret key (whether it is one of the parties or a "trusted" third party). In the
 multi-party FHE setting, none of the parties has a hold on the secret key.
 Instead, each party has its own secret key (therefore, it will also be called a
-"key-owner" later on). The public keys (which includes the encryption key and
-the evaluation keys) are generated in a initialization protocol (a.k.a
+"key-owner" later on). The public keys (which include the encryption key and
+the evaluation keys) are generated in an initialization protocol (a.k.a
 InitProtocol) between the parties. To decrypt a ciphertext, each of the parties
 (key-owners) needs to give its consent and to take part in a decryption protocol
 (a.k.a. DecryptProtocol).
@@ -63,7 +63,7 @@ InitProtocol) between the parties. To decrypt a ciphertext, each of the parties
 In the following example we consider the case of 2 data owners - Alice and Bob -
 and a server. The security model requires that the server is not colluding with
 any of the data owners. The example demonstrates how an encrypted linear
-regression model can be trained with encrypted data of multiples data owners.
+regression model can be trained with encrypted data of multiple data owners.
 After the training process is complete the model is decrypted and shared between
 the data owners. The model used in this example is a linear regression model.
 
@@ -101,10 +101,11 @@ int main()
 
   // These are HE requirements shared by the participants.
   HeConfigRequirement req =
-      useMockup ? HeConfigRequirement::insecure(pow(2, 13), 9, 42, 10)
-                : HeConfigRequirement(pow(2, 13), 9, 42, 10);
-  req.publicFunctions.rotate = CUSTOM_ROTATIONS;
-  req.publicFunctions.rotationSteps = {1, 16, 256, 4096};
+      useMockup ? HeConfigRequirement::insecure(pow(2, 15), 18, 52, 8)
+                : HeConfigRequirement(pow(2, 15), 18, 52, 8);
+
+  req.publicFunctions.rotate(CUSTOM_ROTATIONS);
+  req.publicFunctions.rotationSteps({1, 16, 256, 4096});
 
   // === Alice setup ===
   shared_ptr<HeContext> heAlice = getUninitializedContext();
@@ -160,22 +161,22 @@ int main()
 
   // These are hyper parameters shared by the parties
   PlainModelHyperParams hyperParams;
-  hyperParams.numberOfFeatures = 1;
-  hyperParams.logisticRegressionActivation = LR_ACTIVATION_NONE;
-  hyperParams.linearRegressionDistributionX = LR_NORMAL_DISTRIBUTION;
-  hyperParams.linearRegressionMeanX = meanX;
-  hyperParams.linearRegressionStdX = stdX;
-  hyperParams.inverseApproximationPrecision = 2;
-  hyperParams.trainable = true;
-  hyperParams.verbose = false;
+  hyperParams.numberOfFeatures(1);
+  hyperParams.logisticRegressionActivation(LR_ACTIVATION_NONE);
+  hyperParams.linearRegressionDistributionX(LR_NORMAL_DISTRIBUTION);
+  hyperParams.linearRegressionMeanX(meanX);
+  hyperParams.linearRegressionStdX(stdX);
+  hyperParams.inverseApproximationPrecision(2);
+  hyperParams.trainable(true);
+  hyperParams.verbose(false);
 
   // This should equal the number of data owners. In our case there are two
   // data owners (Alice and Bob).
-  hyperParams.fitHyperParams.numberOfIterations = 2;
+  hyperParams.fitHyperParams.numberOfIterations(2);
 
   // This should equal the maximal number of samples for each party. In our case
   // there are at most numSamplesEachParty samples for each party.
-  hyperParams.fitHyperParams.fitBatchSize = numSamplesEachParty;
+  hyperParams.fitHyperParams.fitBatchSize(numSamplesEachParty);
 
   // === Alice side ===
   shared_ptr<HeModel> lrAlice = setupHeModel(heAlice, hyperParams);
@@ -285,7 +286,7 @@ int main()
 shared_ptr<HeContext> getUninitializedContext()
 {
   return useMockup ? shared_ptr<HeContext>(make_shared<MockupContext>())
-                   : shared_ptr<HeContext>(make_shared<PalisadeCkksContext>());
+                   : shared_ptr<HeContext>(make_shared<OpenFheCkksContext>());
 }
 
 void setupParticipant(shared_ptr<HeContext> he,
@@ -313,7 +314,7 @@ shared_ptr<HeModel> setupHeModel(shared_ptr<HeContext> he,
   HeRunRequirements heRunReq;
 
   if (useMockup) {
-    heRunReq.setHeContextOptions({make_shared<PalisadeCkksContext>()});
+    heRunReq.setHeContextOptions({make_shared<OpenFheCkksContext>()});
   } else {
     heRunReq.setHeContextOptions({he});
   }
